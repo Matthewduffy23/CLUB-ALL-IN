@@ -583,7 +583,7 @@ PORTRAIT_SVG_LINES="""
 def render_squad_pitch(team,league,formation,slots,slot_map,depth,df_sc,
                        show_mins=True,show_goals=True,show_assists=True,
                        show_roles=True,xi_only=False,best_role_only=False,
-                       show_contracts=True):
+                       show_contracts=True,show_positions=True):
     BG="#0a0f1c"; bsz="11px"; nsz="11px"; ssz="8px"; rsz="7px"
 
     def make_node(slot):
@@ -600,7 +600,7 @@ def render_squad_pitch(team,league,formation,slots,slot_map,depth,df_sc,
             _lo=is_loaned_out(p); _yt=is_youth(p)
             col=player_css_color(yrs,loan,_lo,_yt)
             multi=" \U0001f501" if _multi_role(p.get("Position","")) else ""
-            oop_s=f" ({p['_primary_pos']})" if p.get('_show_pos') else ''
+            oop_s=f" ({p['_primary_pos']})" if (show_positions and p.get('_show_pos')) else ''
             suffix=(f" L{oop_s}{multi}" if loan else f"{(yr_str if show_contracts else '')}{oop_s}{multi}")
             stat_parts=[]
             if show_mins: stat_parts.append(f"{int(float(p.get('Minutes played') or 0))}\u2032")
@@ -906,14 +906,15 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown("**DISPLAY OPTIONS**")
-    show_mins   =st.toggle("Minutes played",True,key="sq_mins")
-    show_goals  =st.toggle("Goals",True,key="sq_goals")
-    show_assists=st.toggle("Assists",True,key="sq_assists")
-    show_roles  =st.toggle("Role scores",True,key="sq_roles")
-    best_role_only=st.toggle("Best role only",False,key="sq_bestonly")
-    xi_only     =st.toggle("XI only",False,key="sq_xionly")
-    show_contracts=st.toggle("Show contracts",True,key="sq_contracts")
-    sq_min_mins =st.slider("Min player minutes",0,3000,0,50,key="sq_minmins")
+    show_mins      =st.toggle("Minutes played",True,key="sq_mins")
+    show_goals     =st.toggle("Goals",True,key="sq_goals")
+    show_assists   =st.toggle("Assists",True,key="sq_assists")
+    show_roles     =st.toggle("Role scores",True,key="sq_roles")
+    best_role_only =st.toggle("Best role only",False,key="sq_bestonly")
+    xi_only        =st.toggle("XI only",False,key="sq_xionly")
+    show_contracts =st.toggle("Show contracts",True,key="sq_contracts")
+    show_positions =st.toggle("Show positions",True,key="sq_showpos")
+    sq_min_mins    =st.slider("Min player minutes",0,3000,0,50,key="sq_minmins")
     st.session_state["sq_minmins_val"]=sq_min_mins
     st.markdown("---")
     min_matches =st.slider("Min team matches played",0,80,5,key="sb_minmatches")
@@ -1029,25 +1030,37 @@ def _img_to_b64(img_array):
     buf=io.BytesIO(); plt.imsave(buf,img_array,format="png")
     return base64.b64encode(buf.getvalue()).decode()
 
+@st.cache_data(show_spinner=False)
+def _fetch_b64_url(url: str) -> str:
+    """Download any image URL server-side and return a base64 data URI (bypasses browser CSP)."""
+    if not url: return ""
+    try:
+        r = requests.get(url, timeout=8); r.raise_for_status()
+        mime = r.headers.get("Content-Type","image/png").split(";")[0].strip()
+        b64  = base64.b64encode(r.content).decode()
+        return f"data:{mime};base64,{b64}"
+    except: return ""
+
 # ── Club badge HTML ───────────────────────────────────────────────────────────
 if badge_img is not None:
     badge_html_header=(f'<img src="data:image/png;base64,{_img_to_b64(badge_img)}" '
                        f'style="width:80px;height:80px;object-fit:contain;border-radius:8px;"/>')
 else:
     _raw_url=fotmob_crest_url(sel_team)
-    if _raw_url:
-        badge_html_header=(f'<img src="{_raw_url}" '
-                           f'style="width:80px;height:80px;object-fit:contain;border-radius:8px;" '
-                           f'onerror="this.style.display=\'none\'"/>')
+    _badge_b64=_fetch_b64_url(_raw_url) if _raw_url else ""
+    if _badge_b64:
+        badge_html_header=(f'<img src="{_badge_b64}" '
+                           f'style="width:80px;height:80px;object-fit:contain;border-radius:8px;"/>')
     else:
         badge_html_header=('<div style="width:80px;height:80px;background:#111827;border-radius:8px;'
                            'display:flex;align-items:center;justify-content:center;font-size:32px;">🏟️</div>')
 
-# ── League logo HTML ──────────────────────────────────────────────────────────
-_league_logo_url=_get_league_logo_url(t_league)
-league_logo_html=(f'<img src="{_league_logo_url}" '
-                  f'style="height:36px;width:36px;object-fit:contain;vertical-align:middle;margin-right:8px;" '
-                  f'onerror="this.style.display=\'none\'"/>') if _league_logo_url else ""
+# ── League logo HTML — fetched server-side so base64 data URI bypasses CSP ───
+_league_logo_url = _get_league_logo_url(t_league)
+_league_logo_b64 = _fetch_b64_url(_league_logo_url) if _league_logo_url else ""
+league_logo_html = (f'<img src="{_league_logo_b64}" '
+                    f'style="height:32px;width:32px;object-fit:contain;vertical-align:middle;'
+                    f'margin-right:6px;border-radius:3px;"/>') if _league_logo_b64 else ""
 
 # Build header HTML
 def score_chip(label,val):
@@ -1327,13 +1340,113 @@ else:
             sel_team,t_league,formation,slots_sq,slot_map_sq,depth_sq,df_players_sc,
             show_mins=show_mins,show_goals=show_goals,show_assists=show_assists,
             show_roles=show_roles,xi_only=xi_only,best_role_only=best_role_only,
-            show_contracts=show_contracts
+            show_contracts=show_contracts,show_positions=show_positions
         )
 
         # Render pitch in a centered constrained column
         _pc1,_pc2,_pc3=st.columns([1,4,1])
         with _pc2:
             st.markdown(pitch_html,unsafe_allow_html=True)
+
+        # ── Download depth chart as PNG (matplotlib render) ──────────────────
+        def _render_depth_png(team_name, formation_label, slots, slot_map, depth, df_sc,
+                              show_mins, show_goals, show_assists, show_roles,
+                              xi_only, best_role_only, show_contracts, show_positions):
+            """Render the squad pitch to a PNG via matplotlib and return bytes."""
+            BG="#0a0f1c"
+            fig, ax = plt.subplots(figsize=(10,14))
+            fig.patch.set_facecolor(BG); ax.set_facecolor(BG)
+            ax.set_xlim(0,100); ax.set_ylim(0,100); ax.invert_yaxis()
+            ax.axis("off")
+
+            # Pitch outline lines (faint)
+            lc="#9ca3af"; la=0.18; lw=0.8
+            ax.plot([2,98,98,2,2],[2,2,98,98,2],color=lc,alpha=la,lw=lw)
+            ax.axhline(50,color=lc,alpha=la,lw=lw)
+            circle=plt.Circle((50,50),7,fill=False,color=lc,alpha=la,lw=lw)
+            ax.add_patch(circle)
+            for (x1,y1,x2,y2) in [(22,2,78,2),(22,14,78,14),(36,2,64,2),(36,7,64,7),
+                                   (22,86,78,86),(22,98,78,98),(36,86,64,86),(36,93,64,93)]:
+                ax.plot([x1,x2],[y1,y2],color=lc,alpha=la,lw=lw)
+
+            # Formation label
+            ax.text(50,99,f"{team_name.upper()}  ·  {formation_label}",
+                    ha="center",va="bottom",fontsize=11,fontweight="bold",
+                    color="#6b7280",fontfamily="monospace")
+
+            # Slot nodes
+            for slot in slots:
+                xs=float(slot["x"]); ys=float(slot["y"])
+                # Position badge
+                ax.text(xs,ys-6,slot["label"],ha="center",va="center",
+                        fontsize=10,fontweight="black",color="#ef4444",
+                        bbox=dict(boxstyle="square,pad=0.25",fc=BG,ec="#ef4444",lw=1.5))
+                ps_all=slot_map.get(slot["id"],[])
+                ps=ps_all[:1] if xi_only else ps_all
+                for i,p in enumerate(ps):
+                    from datetime import date as _date
+                    yrs=contract_years(p.get("Contract expires",""))
+                    loan=is_loan(p); _lo=is_loaned_out(p); _yt=is_youth(p)
+                    col=player_css_color(yrs,loan,_lo,_yt)
+                    yr_str=f"+{yrs}" if yrs>=0 else "+?"
+                    oop_s=f" ({p['_primary_pos']})" if (show_positions and p.get("_show_pos")) else ""
+                    suffix=(" L"+oop_s if loan else f"{(yr_str if show_contracts else '')}{oop_s}")
+                    name_line=f"{p['Player']} {suffix}"
+                    stat_parts=[]
+                    if show_mins: stat_parts.append(f"{int(float(p.get('Minutes played') or 0))}′")
+                    if show_goals:
+                        g=float(p.get("Goals") or 0)
+                        if g>0: stat_parts.append(f"{int(g)}⚽")
+                    if show_assists:
+                        a=float(p.get("Assists") or 0)
+                        if a>0: stat_parts.append(f"{int(a)}🅰")
+                    stat_line=" ".join(stat_parts)
+                    y_off=ys+i*8
+                    fw="bold" if i==0 else "normal"
+                    ax.text(xs,y_off,name_line,ha="center",va="center",
+                            fontsize=7.5,fontweight=fw,color=col,
+                            fontfamily="monospace",clip_on=True)
+                    if stat_line:
+                        ax.text(xs,y_off+3.5,stat_line,ha="center",va="center",
+                                fontsize=6,color="#9ca3af",fontfamily="monospace",clip_on=True)
+
+            # Depth bar
+            if not xi_only and depth:
+                ax.text(50,96,"DEPTH",ha="center",va="center",fontsize=7,
+                        fontweight="black",color="#6b7280",fontfamily="monospace")
+                for di,p in enumerate(depth[:12]):
+                    dx=5+di*8; dy=92
+                    yrs=contract_years(p.get("Contract expires",""))
+                    loan=is_loan(p); _lo=is_loaned_out(p); _yt=is_youth(p)
+                    col=player_css_color(yrs,loan,_lo,_yt)
+                    pos_t=_tok(p.get("Position",""))
+                    dep_yr="L" if loan else (f"+{yrs}" if yrs>=0 else "+?")
+                    ax.text(dx,dy,p["Player"],ha="center",va="center",
+                            fontsize=5.5,fontweight="bold",color=col,
+                            fontfamily="monospace",clip_on=True)
+                    ax.text(dx,dy+2.5,f"{pos_t} {dep_yr}",ha="center",va="center",
+                            fontsize=4.5,color="#6b7280",fontfamily="monospace",clip_on=True)
+
+            buf=io.BytesIO()
+            fig.savefig(buf,format="png",dpi=200,bbox_inches="tight",facecolor=BG)
+            plt.close(fig)
+            buf.seek(0)
+            return buf.getvalue()
+
+        _dl_col1, _dl_col2 = st.columns([1,6])
+        with _dl_col1:
+            _png_bytes = _render_depth_png(
+                sel_team, formation, slots_sq, slot_map_sq, depth_sq, df_players_sc,
+                show_mins, show_goals, show_assists, show_roles,
+                xi_only, best_role_only, show_contracts, show_positions
+            )
+            st.download_button(
+                "⬇️ Download Depth Chart",
+                _png_bytes,
+                f"{sel_team.replace(' ','_')}_squad_{formation}.png",
+                "image/png",
+                key="sq_dl"
+            )
 
         # Rebuild button — placed below pitch to avoid sidebar context nesting issues
         if st.button("🔄 Rebuild Squad", key="sq_rebuild"):

@@ -782,6 +782,85 @@ with st.sidebar:
         df_team_raw=_read_team_csv(_up_team.getvalue())
 
     st.markdown("**PLAYER CSV (for squad)**")
+
+    # ── Flexible player CSV column normalisation ──────────────────────────────
+    # Wyscout exports use various column name styles. This maps them all to the
+    # standard names the squad depth chart expects.
+    PLAYER_COL_MAP = {
+        # Standard name : list of possible raw names (lowercase, stripped)
+        "Player":         ["player","full name","name","player name","player_name"],
+        "Team":           ["team","club","team name","club name"],
+        "League":         ["league","competition","league name"],
+        "Position":       ["position","positions","primary position","pos","position(s)"],
+        "Minutes played": ["minutes played","minutes","mins","min","minutes_played","mins played"],
+        "Goals":          ["goals","goals scored","goal"],
+        "Assists":        ["assists","assist"],
+        "Age":            ["age","player age"],
+        "xG":             ["xg","expected goals","xgoals"],
+        "xA":             ["xa","expected assists","xassists"],
+        "Market value":   ["market value","value","transfer value","market_value"],
+        "Contract expires":["contract expires","contract expiry","contract","contract end",
+                            "contract_expires","expiry date","expires"],
+        "On loan":        ["on loan","loan","on_loan","loaned in"],
+        "Loaned Out":     ["loaned out","loan out","loaned_out"],
+        "Youth Player":   ["youth player","youth","academy","youth_player"],
+        "Foot":           ["foot","preferred foot"],
+        "Height":         ["height"],
+        "Birth country":  ["birth country","nationality","country","birth_country"],
+    }
+
+    def normalise_player_df(df: pd.DataFrame) -> pd.DataFrame:
+        df = df.copy()
+        df.columns = df.columns.str.strip()
+        col_lower = {c.lower().strip(): c for c in df.columns}
+        rename = {}
+        for standard, aliases in PLAYER_COL_MAP.items():
+            if standard in df.columns:
+                continue  # already correct
+            for alias in aliases:
+                if alias in col_lower:
+                    rename[col_lower[alias]] = standard
+                    break
+        df = df.rename(columns=rename)
+
+        # Strip whitespace from key string columns
+        for c in ["Player", "Team", "Position", "League"]:
+            if c in df.columns:
+                df[c] = df[c].astype(str).str.strip()
+
+        # Coerce numeric columns
+        for c in ["Minutes played", "Goals", "Assists", "Age", "xG", "xA"]:
+            if c in df.columns:
+                df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
+
+        # Require Player and Position — raise a clear error if still missing
+        missing = [c for c in ["Player", "Position"] if c not in df.columns]
+        if missing:
+            available = ", ".join(df.columns.tolist())
+            raise KeyError(
+                f"Could not find columns {missing} in player CSV. "
+                f"Available columns: {available}"
+            )
+
+        # Ensure Team and League exist (can be empty if single-team upload)
+        for c in ["Team", "League"]:
+            if c not in df.columns:
+                df[c] = ""
+
+        df["_ftok"] = df["Position"].apply(_tok)
+        df["_key"]  = df["Player"]
+        return df
+
+    @st.cache_data(show_spinner=False)
+    def _load_player_path(path):
+        df = pd.read_csv(path)
+        return normalise_player_df(df)
+
+    @st.cache_data(show_spinner=False)
+    def _load_player_bytes(data):
+        df = pd.read_csv(io.BytesIO(data))
+        return normalise_player_df(df)
+
     _player_csvs=[c.name for c in csv_candidates]
     if _player_csvs:
         _def_p=0
@@ -789,17 +868,6 @@ with st.sidebar:
             if "player" in n.lower() or "squad" in n.lower() or "efl" in n.lower():
                 _def_p=i; break
         _player_csv_choice=st.selectbox("Player CSV:",_player_csvs,index=_def_p,key="sb_playercsv")
-        _player_csv_key=_player_csv_choice
-
-        @st.cache_data(show_spinner=False)
-        def _load_player_path(path):
-            df=pd.read_csv(path); df.columns=df.columns.str.strip()
-            for c in ["Player","Team","Position","League"]:
-                if c in df.columns: df[c]=df[c].astype(str).str.strip()
-            for c in ["Minutes played","Goals","Assists","Age","xG","xA"]:
-                if c in df.columns: df[c]=pd.to_numeric(df[c],errors="coerce").fillna(0)
-            df["_ftok"]=df["Position"].apply(_tok); df["_key"]=df["Player"]
-            return df
 
         if st.session_state.get("_player_src")!=_player_csv_choice:
             st.session_state["_player_df"]=None
@@ -807,7 +875,11 @@ with st.sidebar:
             st.session_state["_player_src"]=_player_csv_choice
         if st.session_state.get("_player_df") is None:
             with st.spinner("Loading player data…"):
-                st.session_state["_player_df"]=_load_player_path(str(Path.cwd()/_player_csv_choice))
+                try:
+                    st.session_state["_player_df"]=_load_player_path(str(Path.cwd()/_player_csv_choice))
+                except KeyError as e:
+                    st.error(f"Player CSV column error: {e}")
+                    st.stop()
             st.session_state["_player_df_sc"]=None
         if st.session_state.get("_player_df_sc") is None:
             with st.spinner("Computing role scores…"):
@@ -817,16 +889,11 @@ with st.sidebar:
     else:
         _up_player=st.file_uploader("Upload Player CSV",type=["csv"],key="sb_playerup")
         if _up_player:
-            @st.cache_data(show_spinner=False)
-            def _load_player_bytes(data):
-                df=pd.read_csv(io.BytesIO(data)); df.columns=df.columns.str.strip()
-                for c in ["Player","Team","Position","League"]:
-                    if c in df.columns: df[c]=df[c].astype(str).str.strip()
-                for c in ["Minutes played","Goals","Assists","Age","xG","xA"]:
-                    if c in df.columns: df[c]=pd.to_numeric(df[c],errors="coerce").fillna(0)
-                df["_ftok"]=df["Position"].apply(_tok); df["_key"]=df["Player"]
-                return df
-            df_players=_load_player_bytes(_up_player.getvalue())
+            try:
+                df_players=_load_player_bytes(_up_player.getvalue())
+            except KeyError as e:
+                st.error(f"Player CSV column error: {e}")
+                st.stop()
             if st.session_state.get("_player_df_sc") is None:
                 with st.spinner("Computing role scores…"):
                     df_players_sc=compute_role_scores(df_players)
@@ -1262,6 +1329,27 @@ else:
         _pc1,_pc2,_pc3=st.columns([1,4,1])
         with _pc2:
             st.markdown(pitch_html,unsafe_allow_html=True)
+
+        # Formation sub-selector
+        with st.sidebar:
+            if st.button("🔄 Rebuild Squad",key="sq_rebuild"):
+                _sm,_dep=assign_players(players_list,formation)
+                st.session_state["_squad_slot_map"]=_sm
+                st.session_state["_squad_depth"]=_dep
+                st.session_state["_squad_cache_key"]=_cache_key
+                st.rerun()
+
+        # Full squad table
+        with st.expander("📋 Full Squad"):
+            show_c=[c for c in ["Player","Position","Minutes played","Goals","Assists",
+                                 "Market value","Contract expires","Age"] if c in _tp_filt.columns]
+            st.dataframe(
+                _tp_filt[show_c].sort_values("Minutes played",ascending=False).reset_index(drop=True),
+                use_container_width=True
+            )
+
+st.markdown("---")
+st.caption("TEAM HQ + SQUAD · Wyscout data · Percentile ranks computed within league pool")
 
         # Formation sub-selector
         with st.sidebar:

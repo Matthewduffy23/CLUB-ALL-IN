@@ -1350,24 +1350,3 @@ else:
 
 st.markdown("---")
 st.caption("TEAM HQ + SQUAD · Wyscout data · Percentile ranks computed within league pool")
-
-        # Formation sub-selector
-        with st.sidebar:
-            if st.button("🔄 Rebuild Squad",key="sq_rebuild"):
-                _sm,_dep=assign_players(players_list,formation)
-                st.session_state["_squad_slot_map"]=_sm
-                st.session_state["_squad_depth"]=_dep
-                st.session_state["_squad_cache_key"]=_cache_key
-                st.rerun()
-
-        # Full squad table
-        with st.expander("📋 Full Squad"):
-            show_c=[c for c in ["Player","Position","Minutes played","Goals","Assists",
-                                 "Market value","Contract expires","Age"] if c in _tp_filt.columns]
-            st.dataframe(
-                _tp_filt[show_c].sort_values("Minutes played",ascending=False).reset_index(drop=True),
-                use_container_width=True
-            )
-
-st.markdown("---")
-st.caption("TEAM HQ + SQUAD · Wyscout data · Percentile ranks computed within league pool")

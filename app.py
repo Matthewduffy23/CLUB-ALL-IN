@@ -584,14 +584,14 @@ def render_squad_pitch(team,league,formation,slots,slot_map,depth,df_sc,
                        show_mins=True,show_goals=True,show_assists=True,
                        show_roles=True,xi_only=False,best_role_only=False,
                        show_contracts=True):
-    BG="#0a0f1c"; bsz="15px"; nsz="14px"; ssz="9px"; rsz="8px"
+    BG="#0a0f1c"; bsz="11px"; nsz="11px"; ssz="8px"; rsz="7px"
 
     def make_node(slot):
         ps_all=slot_map.get(slot["id"],[])
         ps=ps_all[:1] if xi_only else ps_all
-        badge=(f'<div style="display:inline-block;padding:2px 8px;border:2px solid #ef4444;'
-               f'color:#ef4444;font-size:{bsz};font-weight:900;letter-spacing:.1em;'
-               f'margin-bottom:3px;background:rgba(10,15,28,.97);">{slot["label"]}</div>')
+        badge=(f'<div style="display:inline-block;padding:1px 6px;border:1.5px solid #ef4444;'
+               f'color:#ef4444;font-size:{bsz};font-weight:900;letter-spacing:.08em;'
+               f'margin-bottom:2px;background:rgba(10,15,28,.97);">{slot["label"]}</div>')
         rows=""
         for i,p in enumerate(ps):
             yrs=contract_years(p.get("Contract expires",""))
@@ -610,19 +610,20 @@ def render_squad_pitch(team,league,formation,slots,slot_map,depth,df_sc,
             if show_assists:
                 a=float(p.get("Assists") or 0)
                 if a>0: stat_parts.append(f"{int(a)}\U0001f170")
-            stat_html=(f'<div style="color:#fff;font-size:{ssz};line-height:1.2;opacity:.9;">{" ".join(stat_parts)}</div>'
+            stat_html=(f'<div style="color:#cbd5e1;font-size:{ssz};line-height:1.2;opacity:.85;">{" ".join(stat_parts)}</div>'
                       ) if stat_parts else ""
             rs_html=(best_role_html(p,df_sc,rsz) if (show_roles and (best_role_only or i>0))
                      else all_roles_html(p,df_sc,rsz) if (i==0 and show_roles) else "")
-            mt="margin-top:5px;" if i>0 else ""
-            rows+=(f'<div style="color:{col};font-size:{nsz};line-height:1.45;font-weight:{fw};{mt}'
-                   f'white-space:nowrap;text-shadow:0 0 8px rgba(0,0,0,1);">'
+            mt="margin-top:4px;" if i>0 else ""
+            rows+=(f'<div style="color:{col};font-size:{nsz};line-height:1.35;font-weight:{fw};{mt}'
+                   f'white-space:nowrap;text-shadow:0 1px 4px rgba(0,0,0,.9);">'
                    f'{p["Player"]} {suffix}</div>{stat_html}{rs_html}')
         if not ps: rows=f'<div style="color:#1f2937;font-size:{ssz};">&#8212;</div>'
-        sx=float(slot.get("x",50)); mxw="115px" if (sx<20 or sx>80) else "none"
+        sx=float(slot.get("x",50))
+        mxw="105px" if (sx<18 or sx>82) else "130px"
         return (f'<div style="position:absolute;left:{slot["x"]}%;top:{slot["y"]}%;'
                 f'transform:translate(-50%,-50%);text-align:center;'
-                f'min-width:80px;max-width:{mxw};z-index:10;">'
+                f'min-width:75px;max-width:{mxw};z-index:10;">'
                 f'{badge}<div>{rows}</div></div>')
 
     nodes="".join(make_node(s) for s in slots)
@@ -1073,10 +1074,9 @@ st.markdown(f"""
                 color:#fff;letter-spacing:.03em;line-height:1.1;">{sel_team.upper()}</div>
     <div style="margin-top:8px;display:flex;align-items:center;font-size:14px;
                 color:#9ca3af;font-weight:600;gap:6px;flex-wrap:wrap;">
-      {league_logo_html}{flag}
-      <span>{t_league}</span>
+      {league_logo_html}<span>{t_league}</span>
       <span style="color:#374151;">&nbsp;·&nbsp;</span>
-      <span>{t_country}</span>
+      {flag}<span>{t_country}</span>
       <span style="color:#374151;">&nbsp;·&nbsp;</span>
       <span>{t_region}</span>
     </div>
@@ -1217,20 +1217,25 @@ def chips(items,bg,label):
         for t in list(dict.fromkeys(items))[:8])
     return f'<div style="margin-bottom:8px;">{spans}</div>'
 
-# Key stats
-_stats_html=""
-for lbl,col,inv in [("xG",    "xG p90",False),("xGA","xG Against p90",True),
-                    ("Poss",  "Possession %",False),("PPDA","PPDA",True),
-                    ("Passes","Passes p90",False),("Pts", "Points",False)]:
+# Key stats — use a table for perfect column alignment
+_stats_rows=""
+for lbl,col,inv in [("xG","xG p90",False),("xGA","xG Against p90",True),
+                    ("Poss","Possession %",False),("PPDA","PPDA",True),
+                    ("Passes","Passes p90",False),("Pts","Points",False)]:
     if col in t_row.index and pd.notna(t_row.get(col)):
         v=float(t_row[col])
         pct=_op_pct(col,inv)
-        _stats_html+=(f'<div style="display:flex;justify-content:space-between;align-items:center;'
-                      f'padding:5px 8px;border-bottom:1px solid #1e2d4a;">'
-                      f'<span style="color:#9ca3af;font-size:12px;font-weight:600;">{lbl}</span>'
-                      f'<span style="color:#fff;font-size:13px;font-weight:700;">{v:.2f}</span>'
-                      f'<span style="background:{rating_color(pct)};color:#000;font-size:11px;font-weight:900;'
-                      f'padding:2px 7px;border-radius:5px;">{int(pct)}</span></div>')
+        fg="#000" if pct>=44 else "#fff"
+        _stats_rows+=(
+            f'<tr style="border-bottom:1px solid #1e2d4a;">'
+            f'<td style="color:#9ca3af;font-size:12px;font-weight:600;padding:6px 8px;white-space:nowrap;">{lbl}</td>'
+            f'<td style="color:#fff;font-size:13px;font-weight:700;padding:6px 8px;text-align:right;">{v:.2f}</td>'
+            f'<td style="padding:6px 4px;text-align:right;">'
+            f'<span style="background:{rating_color(pct)};color:{fg};font-size:11px;font-weight:900;'
+            f'padding:2px 8px;border-radius:5px;display:inline-block;min-width:30px;text-align:center;">'
+            f'{int(pct)}</span></td></tr>')
+_stats_html=(f'<table style="width:100%;border-collapse:collapse;">{_stats_rows}</table>'
+             if _stats_rows else "")
 
 # League position
 def _lg_pos(row,df_all,metric,asc=False):

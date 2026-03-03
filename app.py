@@ -1,4 +1,4 @@
-# team_squad_app.py — Combined Team Profile + Squad Depth Chart
+# team_squad_app.py — Combined Team Profile + Squad Depth Chart + Pro Layout
 # pip install streamlit pandas numpy matplotlib scikit-learn requests
 # streamlit run team_squad_app.py
 
@@ -22,7 +22,6 @@ st.set_page_config(page_title="TEAM HQ + SQUAD", layout="wide")
 # SHARED CONSTANTS / HELPERS
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# ── Column normalisation ──────────────────────────────────────────────────────
 COL_MAP = {
     "League":            ["league"],
     "Team":              ["team"],
@@ -84,7 +83,6 @@ METRIC_LABELS = {
 }
 def mlabel(col): return METRIC_LABELS.get(col, col)
 
-# ── League / region helpers ───────────────────────────────────────────────────
 LEAGUE_STRENGTHS = {
     "England 1":100.00,"Spain 1":87.84,"Germany 1":87.45,"Italy 1":85.88,"France 1":83.14,
     "England 2":75.10,"Belgium 1":74.51,"Brazil 1":74.31,"Portugal 1":72.94,"Argentina 1":71.37,
@@ -145,7 +143,6 @@ def flag_html(league_name):
     src=f"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/{code}.svg"
     return f"<img src='{src}' style='height:18px;vertical-align:middle;margin-right:4px;'>"
 
-# ── Colour helpers ────────────────────────────────────────────────────────────
 def rating_color(v):
     v=float(v)
     if v>=85: return "#2E6114"
@@ -160,9 +157,6 @@ def fmt2(n):
     try: return f"{max(0,min(99,int(float(n)))):02d}"
     except: return "00"
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# TEAM STATS CSV LOADER & NORMALISATION
-# ═══════════════════════════════════════════════════════════════════════════════
 @st.cache_data(show_spinner=False)
 def _read_team_csv(data:bytes)->pd.DataFrame: return pd.read_csv(io.BytesIO(data))
 @st.cache_data(show_spinner=False)
@@ -180,9 +174,6 @@ def pct_rank(series:pd.Series,invert:bool=False)->pd.Series:
     r=series.rank(pct=True)*100
     return 100-r if invert else r
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# SQUAD DEPTH — Role Buckets, Formation, Helpers (from squad app)
-# ═══════════════════════════════════════════════════════════════════════════════
 ROLE_BUCKETS = {
     "GK":{"Shot Stopper GK":{"metrics":{"Prevented goals per 90":3,"Save rate, %":1}},
           "Ball Playing GK":{"metrics":{"Passes per 90":1,"Accurate passes, %":3,"Accurate long passes, %":2}},
@@ -460,7 +451,6 @@ def assign_players(players,formation_key):
             for i,p in enumerate(depth_rem):
                 slot_map[ordered[i%n]["id"]].append(p)
 
-    # 4-back CB redistribution
     four_back={"4-2-3-1","4-3-3","4-4-2","4-1-4-1","3-4-3"}
     if formation_key in four_back:
         cb1_id=next((s["id"] for s in slots if s["id"]=="CB1"),None)
@@ -477,7 +467,6 @@ def assign_players(players,formation_key):
             for i,p in enumerate(oth_p): (left if i%2==0 else right).append(p)
             slot_map[cb1_id]=left; slot_map[cb2_id]=right
 
-    # 3-back CB redistribution
     three_back={"3-5-2","3-4-3"}
     if formation_key in three_back:
         lcb_id=next((s["id"] for s in slots if s["id"]=="LCB"),None)
@@ -499,7 +488,6 @@ def assign_players(players,formation_key):
                 slot_map[cb_id]=[p for i,p in enumerate(remaining) if i%2==0]
                 slot_map[rcb_id]=[p for i,p in enumerate(remaining) if i%2==1]
 
-    # Fallback pass
     by_label_id={s["label"]:[] for s in slots}
     for s in slots: by_label_id[s["label"]].append(s["id"])
     remaining=[p for p in players if p["_key"] not in assigned]
@@ -526,7 +514,6 @@ def assign_players(players,formation_key):
     depth.sort(key=lambda p:-float(p.get("Minutes played") or 0))
     return slot_map,depth
 
-# Role score HTML
 def all_roles_html(player,df_sc,fs="8px"):
     if df_sc is None or df_sc.empty: return ""
     rows=df_sc[df_sc["Player"]==player.get("Player","")]
@@ -670,7 +657,6 @@ def render_squad_pitch(team,league,formation,slots,slot_map,depth,df_sc,
 FONT_URL="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800;900&display=swap"
 
 def make_sq_png_page(pitch_html:str, team:str, pitch_w:int=700)->str:
-    """HTML page that auto-captures the squad pitch as PNG using html2canvas."""
     BG="#0a0f1c"
     est_h=round(pitch_w*1.42)+180
     return f"""<!DOCTYPE html>
@@ -705,14 +691,172 @@ document.fonts.ready.then(function(){{
 }});
 </script></body></html>"""
 
-# ── Badge loaders ─────────────────────────────────────────────────────────────
-# Tries your repo filenames first, then common alternatives, then falls back silently.
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# PRO LAYOUT
+# ═══════════════════════════════════════════════════════════════════════════════
+# Position groups displayed attack → defence. Each tuple: (display label, list of raw position tokens)
+PRO_LAYOUT_GROUPS = [
+    ("CF / ST",  ["CF"]),
+    ("AM / W",   ["AMF","LAMF","RAMF","LW","LWF","RW","RWF"]),
+    ("CM",       ["LCMF","RCMF"]),
+    ("DM",       ["DMF","LDMF","RDMF"]),
+    ("FB",       ["LB","RB","LWB","RWB"]),
+    ("CB",       ["CB","LCB","RCB"]),
+    ("GK",       ["GK"]),
+]
+
+def render_pro_layout(team_players_df: pd.DataFrame, df_sc,
+                      show_roles=True, show_mins=True,
+                      show_goals=True, show_assists=True,
+                      show_contracts=True) -> str:
+    """
+    Compact pro-scouting layout.
+    One horizontal row per position group, players sorted by minutes played (desc).
+    Returns an HTML string for st.markdown(..., unsafe_allow_html=True).
+    """
+    BG = "#0a0f1c"
+    rows_html = ""
+
+    for group_label, pos_toks in PRO_LAYOUT_GROUPS:
+        grp = team_players_df[
+            team_players_df["Position"].apply(lambda p: _tok(p) in pos_toks)
+        ].copy()
+        if grp.empty:
+            continue
+        grp = grp.sort_values("Minutes played", ascending=False)
+
+        cards_html = ""
+        for _, row in grp.iterrows():
+            p       = row.to_dict()
+            yrs     = contract_years(p.get("Contract expires", ""))
+            loan    = is_loan(p)
+            _lo     = is_loaned_out(p)
+            _yt     = is_youth(p)
+            col     = player_css_color(yrs, loan, _lo, _yt)
+            pos_tok = _tok(p.get("Position", ""))
+            multi   = " 🔄" if _multi_role(p.get("Position", "")) else ""
+
+            # ── contract status badge ──────────────────────────────────────
+            if show_contracts:
+                if _lo:
+                    cb = ('<span style="background:#78350f;color:#fde68a;font-size:7px;font-weight:800;'
+                          'padding:1px 4px;border-radius:3px;margin-left:4px;">OUT</span>')
+                elif loan:
+                    cb = ('<span style="background:#166534;color:#4ade80;font-size:7px;font-weight:800;'
+                          'padding:1px 4px;border-radius:3px;margin-left:4px;">LOAN</span>')
+                elif yrs == 0:
+                    cb = ('<span style="background:#7f1d1d;color:#fca5a5;font-size:7px;font-weight:800;'
+                          'padding:1px 4px;border-radius:3px;margin-left:4px;">OOC</span>')
+                elif yrs == 1:
+                    cb = ('<span style="background:#78350f;color:#fde68a;font-size:7px;font-weight:800;'
+                          'padding:1px 4px;border-radius:3px;margin-left:4px;">+1</span>')
+                elif yrs >= 2:
+                    cb = f'<span style="color:#4b5563;font-size:8px;margin-left:4px;">+{yrs}</span>'
+                else:
+                    cb = '<span style="color:#4b5563;font-size:8px;margin-left:4px;">+?</span>'
+            else:
+                cb = ""
+
+            # ── stats line ─────────────────────────────────────────────────
+            stat_parts = []
+            if show_mins:
+                mins = int(float(p.get("Minutes played") or 0))
+                stat_parts.append(f"{mins}′")
+            if show_goals:
+                g = float(p.get("Goals") or 0)
+                if g > 0:
+                    stat_parts.append(f"{int(g)}⚽")
+            if show_assists:
+                a = float(p.get("Assists") or 0)
+                if a > 0:
+                    stat_parts.append(f"{int(a)}🅰")
+            stats_str = "  ".join(stat_parts)
+
+            # ── best role score ────────────────────────────────────────────
+            rs_html = ""
+            if show_roles and df_sc is not None and not df_sc.empty:
+                rs_rows = df_sc[df_sc["Player"] == p.get("Player", "")]
+                if not rs_rows.empty:
+                    rs_row = rs_rows.iloc[0]
+                    rk     = _role_key(p.get("Position", ""))
+                    scores = {}
+                    for rn in ROLE_BUCKETS.get(rk, {}):
+                        v = rs_row.get(f"_rs_{rn}", np.nan)
+                        try:
+                            fv = float(v)
+                            if not np.isnan(fv):
+                                scores[rn] = fv
+                        except Exception:
+                            pass
+                    if scores:
+                        best_rn = max(scores, key=scores.get)
+                        best_sc = scores[best_rn]
+                        sc_col  = score_to_color(best_sc)
+                        rs_html = (
+                            f'<div style="display:flex;justify-content:space-between;'
+                            f'font-size:7px;margin-top:3px;gap:4px;">'
+                            f'<span style="color:#6b7280;overflow:hidden;text-overflow:ellipsis;'
+                            f'white-space:nowrap;max-width:90px;">{best_rn}</span>'
+                            f'<span style="color:{sc_col};font-weight:800;flex-shrink:0;">{int(best_sc)}</span>'
+                            f'</div>'
+                        )
+
+            # ── player card ────────────────────────────────────────────────
+            cards_html += (
+                f'<div style="background:#0d1220;border:1px solid #1a2540;padding:8px 10px;'
+                f'min-width:140px;max-width:170px;flex-shrink:0;border-radius:4px;">'
+                # pos token + contract badge
+                f'<div style="display:flex;align-items:center;margin-bottom:3px;">'
+                f'<span style="background:#1e2d4a;color:#94a3b8;font-size:7px;font-weight:800;'
+                f'padding:1px 5px;border-radius:2px;letter-spacing:.08em;">{pos_tok}{multi}</span>'
+                f'{cb}</div>'
+                # name
+                f'<div style="color:{col};font-size:11px;font-weight:700;line-height:1.3;'
+                f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{p["Player"]}</div>'
+                # stats
+                f'<div style="color:#64748b;font-size:8px;margin-top:1px;">{stats_str}</div>'
+                # role score
+                f'{rs_html}'
+                f'</div>'
+            )
+
+        # ── group row ──────────────────────────────────────────────────────
+        rows_html += (
+            f'<div style="margin-bottom:14px;">'
+            f'<div style="font-size:9px;font-weight:900;letter-spacing:.18em;color:#ef4444;'
+            f'text-transform:uppercase;margin-bottom:6px;'
+            f'border-left:3px solid #ef4444;padding-left:8px;">{group_label}</div>'
+            f'<div style="display:flex;flex-wrap:wrap;gap:6px;">{cards_html}</div>'
+            f'</div>'
+        )
+
+    if not rows_html:
+        return ('<div style="color:#6b7280;font-size:12px;padding:20px;text-align:center;">'
+                'No players found for this team.</div>')
+
+    legend = (
+        f'<div style="display:flex;gap:14px;flex-wrap:wrap;font-size:9px;font-weight:700;'
+        f'margin-top:10px;padding-top:8px;border-top:1px solid #1a2540;">'
+        f'<span style="color:#fff;">Contracted</span>'
+        f'<span style="color:#f59e0b;">Final Year (+1)</span>'
+        f'<span style="color:#ef4444;">Out of Contract</span>'
+        f'<span style="color:#22c55e;">On Loan</span>'
+        f'<span style="color:#eab308;">Loaned Out (OUT)</span>'
+        f'<span style="color:#9ca3af;">Youth</span></div>'
+    )
+
+    return (
+        f'<div style="font-family:Montserrat,sans-serif;background:{BG};padding:16px 8px;">'
+        f'{rows_html}{legend}</div>'
+    )
+
+
+# ── Badge loaders ─────────────────────────────────────────────────────────────
 _FOTMOB_URLS = {}
 for _badges_mod in ("badges", "team_fotmob_urls", "fotmob_urls"):
     try:
         _m = __import__(_badges_mod)
-        # badges.py may expose FOTMOB_TEAM_URLS or TEAM_URLS or a dict at module level
         _FOTMOB_URLS = (
             getattr(_m, "FOTMOB_TEAM_URLS", None)
             or getattr(_m, "TEAM_URLS", None)
@@ -750,13 +894,10 @@ def load_remote_img(url):
 def fotmob_crest_url(team):
     raw = (_FOTMOB_URLS.get(team) or "").strip()
     if not raw: return ""
-    # Already a direct image URL (e.g. from badges.py storing .png links directly)
     if raw.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".svg")):
         return raw
-    # Fotmob team page URL — extract team ID
     m = re.search(r"/teams/(\d+)/", raw)
     if m: return f"https://images.fotmob.com/image_resources/logo/teamlogo/{m.group(1)}.png"
-    # Fotmob image URL with teamlogo path already
     if "teamlogo" in raw or "fotmob.com" in raw:
         return raw
     return ""
@@ -805,7 +946,6 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("**TEAM STATS CSV**")
 
-    # Auto-detect CSVs in working directory
     csv_candidates=sorted(Path.cwd().glob("*.csv"),key=lambda c:c.name)
     if csv_candidates:
         _csv_names=[c.name for c in csv_candidates]
@@ -822,11 +962,7 @@ with st.sidebar:
 
     st.markdown("**PLAYER CSV (for squad)**")
 
-    # ── Flexible player CSV column normalisation ──────────────────────────────
-    # Wyscout exports use various column name styles. This maps them all to the
-    # standard names the squad depth chart expects.
     PLAYER_COL_MAP = {
-        # Standard name : list of possible raw names (lowercase, stripped)
         "Player":         ["player","full name","name","player name","player_name"],
         "Team":           ["team","club","team name","club name"],
         "League":         ["league","competition","league name"],
@@ -855,24 +991,18 @@ with st.sidebar:
         rename = {}
         for standard, aliases in PLAYER_COL_MAP.items():
             if standard in df.columns:
-                continue  # already correct
+                continue
             for alias in aliases:
                 if alias in col_lower:
                     rename[col_lower[alias]] = standard
                     break
         df = df.rename(columns=rename)
-
-        # Strip whitespace from key string columns
         for c in ["Player", "Team", "Position", "League"]:
             if c in df.columns:
                 df[c] = df[c].astype(str).str.strip()
-
-        # Coerce numeric columns
         for c in ["Minutes played", "Goals", "Assists", "Age", "xG", "xA"]:
             if c in df.columns:
                 df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
-
-        # Require Player and Position — raise a clear error if still missing
         missing = [c for c in ["Player", "Position"] if c not in df.columns]
         if missing:
             available = ", ".join(df.columns.tolist())
@@ -880,12 +1010,9 @@ with st.sidebar:
                 f"Could not find columns {missing} in player CSV. "
                 f"Available columns: {available}"
             )
-
-        # Ensure Team and League exist (can be empty if single-team upload)
         for c in ["Team", "League"]:
             if c not in df.columns:
                 df[c] = ""
-
         df["_ftok"] = df["Position"].apply(_tok)
         df["_key"]  = df["Player"]
         return df
@@ -967,7 +1094,6 @@ for c in NUMERIC_COLS:
 if "Matches" in df_team_raw.columns:
     df_team_raw=df_team_raw[pd.to_numeric(df_team_raw["Matches"],errors="coerce").fillna(0)>=min_matches]
 
-# ── Percentile ranks ──────────────────────────────────────────────────────────
 df_team=df_team_raw.copy()
 def score_col(name): return f"_pct_{name}"
 
@@ -1014,7 +1140,6 @@ df_team["POS"]=df_team.apply(compute_possession,axis=1)
 if df_team.empty:
     st.warning("No teams in data after filters."); st.stop()
 
-# ── Team selector ─────────────────────────────────────────────────────────────
 all_leagues=sorted(df_team["League"].dropna().unique()) if "League" in df_team.columns else []
 
 with st.sidebar:
@@ -1039,9 +1164,6 @@ with st.sidebar:
     st.markdown("**SQUAD FORMATION**")
     formation=st.selectbox("Formation",list(FORMATIONS.keys()),key="sb_formation")
 
-# ─────────────────────────────────────────────────────────────────────────────
-# GET TEAM ROW
-# ─────────────────────────────────────────────────────────────────────────────
 team_df_rows=df_team[df_team["Team"]==sel_team]
 if team_df_rows.empty: st.warning(f"'{sel_team}' not found."); st.stop()
 t_row=team_df_rows.iloc[0]
@@ -1056,9 +1178,6 @@ def _s(v):
     try: return int(round(float(v)))
     except: return "—"
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# HEADER — Team Name, League, Scores
-# ═══════════════════════════════════════════════════════════════════════════════
 import base64
 
 flag=flag_html(t_league)
@@ -1070,7 +1189,6 @@ def _img_to_b64(img_array):
 
 @st.cache_data(show_spinner=False)
 def _fetch_b64_url(url: str) -> str:
-    """Download any image URL server-side and return a base64 data URI (bypasses browser CSP)."""
     if not url: return ""
     try:
         r = requests.get(url, timeout=8); r.raise_for_status()
@@ -1079,7 +1197,6 @@ def _fetch_b64_url(url: str) -> str:
         return f"data:{mime};base64,{b64}"
     except: return ""
 
-# ── Club badge HTML ───────────────────────────────────────────────────────────
 if badge_img is not None:
     badge_html_header=(f'<img src="data:image/png;base64,{_img_to_b64(badge_img)}" '
                        f'style="width:80px;height:80px;object-fit:contain;border-radius:8px;"/>')
@@ -1093,14 +1210,12 @@ else:
         badge_html_header=('<div style="width:80px;height:80px;background:#111827;border-radius:8px;'
                            'display:flex;align-items:center;justify-content:center;font-size:32px;">🏟️</div>')
 
-# ── League logo HTML — fetched server-side so base64 data URI bypasses CSP ───
 _league_logo_url = _get_league_logo_url(t_league)
 _league_logo_b64 = _fetch_b64_url(_league_logo_url) if _league_logo_url else ""
 league_logo_html = (f'<img src="{_league_logo_b64}" '
                     f'style="height:32px;width:32px;object-fit:contain;vertical-align:middle;'
                     f'margin-right:6px;border-radius:3px;"/>') if _league_logo_b64 else ""
 
-# Build header HTML
 def score_chip(label,val):
     bg=rating_color(val) if not (isinstance(val,float) and np.isnan(val)) else "#1a2035"
     fg="#000" if not (isinstance(val,float) and np.isnan(val)) and float(val)>=44 else "#fff"
@@ -1115,11 +1230,7 @@ st.markdown(f"""
 <div style="background:#0f1628;border:1px solid #1e2d4a;border-radius:16px;
             padding:24px 28px;margin-bottom:24px;display:flex;align-items:center;gap:24px;
             flex-wrap:wrap;">
-
-  <!-- Club badge -->
   <div style="flex-shrink:0;">{badge_html_header}</div>
-
-  <!-- Name + league meta -->
   <div style="flex:1;min-width:200px;">
     <div style="font-family:Montserrat,sans-serif;font-size:34px;font-weight:900;
                 color:#fff;letter-spacing:.03em;line-height:1.1;">{sel_team.upper()}</div>
@@ -1132,8 +1243,6 @@ st.markdown(f"""
       <span>{t_region}</span>
     </div>
   </div>
-
-  <!-- Score chips -->
   <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end;">
     {score_chip("Overall",ovr)}
     {score_chip("Attack",att)}
@@ -1144,7 +1253,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# FEATURE Y — POLAR RADAR
+# POLAR RADAR
 # ═══════════════════════════════════════════════════════════════════════════════
 st.markdown('<div style="font-size:11px;font-weight:900;letter-spacing:.18em;color:#6b7280;'
             'text-transform:uppercase;margin-bottom:10px;">Squad Performance Radar</div>',
@@ -1216,7 +1325,7 @@ with col_radar:
     plt.close(fig_y)
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# STYLE / STRENGTHS / WEAKNESSES  (right column alongside radar)
+# STYLE / STRENGTHS / WEAKNESSES
 # ═══════════════════════════════════════════════════════════════════════════════
 def _op_pct(col,invert=False):
     if col not in pool_y.columns: return 0.0
@@ -1268,7 +1377,6 @@ def chips(items,bg,label):
         for t in list(dict.fromkeys(items))[:8])
     return f'<div style="margin-bottom:8px;">{spans}</div>'
 
-# Key stats — use a table for perfect column alignment
 _stats_rows=""
 for lbl,col,inv in [("xG","xG p90",False),("xGA","xG Against p90",True),
                     ("Poss","Possession %",False),("PPDA","PPDA",True),
@@ -1288,7 +1396,6 @@ for lbl,col,inv in [("xG","xG p90",False),("xGA","xG Against p90",True),
 _stats_html=(f'<table style="width:100%;border-collapse:collapse;">{_stats_rows}</table>'
              if _stats_rows else "")
 
-# League position
 def _lg_pos(row,df_all,metric,asc=False):
     lg=row.get("League","")
     if not lg or metric not in df_all.columns: return None,None
@@ -1319,7 +1426,6 @@ with col_info:
     ({_xpts_str})
   </div>
   {_stats_html}
-
   <div style="margin-top:14px;">
     <div style="font-size:10px;font-weight:900;letter-spacing:.14em;color:#6b7280;text-transform:uppercase;margin-bottom:6px;">Style</div>
     {chips(styles,"#3b82f6","Style")}
@@ -1342,10 +1448,8 @@ st.markdown('<div style="font-size:11px;font-weight:900;letter-spacing:.18em;col
 if df_players is None:
     st.info("Upload a player CSV in the sidebar to see the squad depth chart.")
 else:
-    # Find team in player data — try exact match, then fuzzy
     _team_players=df_players[df_players["Team"]==sel_team]
     if _team_players.empty:
-        # Try partial match
         _tm=sel_team.lower()
         _match=df_players[df_players["Team"].str.lower().str.contains(_tm[:8],na=False)]
         if not _match.empty:
@@ -1353,16 +1457,13 @@ else:
             _team_players=df_players[df_players["Team"]==_actual_team]
 
     if _team_players.empty:
-        st.info(f"No squad data found for **{sel_team}** in the player CSV. "
-                f"Check that the Team name matches exactly.")
+        st.info(f"No squad data found for **{sel_team}** in the player CSV.")
     else:
         sq_min_mins=st.session_state.get("sq_minmins_val",0)
-
         _tp_filt=_team_players[_team_players["Minutes played"]>=sq_min_mins].copy()
         _tp_filt["_key"]=_tp_filt["Player"]
         players_list=_tp_filt.to_dict("records")
 
-        # Build / cache slot assignment
         _cache_key=(sel_team,formation,sq_min_mins)
         if st.session_state.get("_squad_cache_key")!=_cache_key:
             _sm,_dep=assign_players(players_list,formation)
@@ -1395,7 +1496,6 @@ else:
             st.session_state["_squad_cache_key"]=_cache_key
             st.rerun()
 
-        # Full squad table
         with st.expander("📋 Full Squad"):
             show_c=[c for c in ["Player","Position","Minutes played","Goals","Assists",
                                  "Market value","Contract expires","Age"] if c in _tp_filt.columns]
@@ -1403,6 +1503,52 @@ else:
                 _tp_filt[show_c].sort_values("Minutes played",ascending=False).reset_index(drop=True),
                 use_container_width=True
             )
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PRO LAYOUT SECTION
+# ═══════════════════════════════════════════════════════════════════════════════
+st.markdown("---")
+st.markdown('<div style="font-size:11px;font-weight:900;letter-spacing:.18em;color:#6b7280;'
+            'text-transform:uppercase;margin-bottom:10px;">Pro Layout</div>',
+            unsafe_allow_html=True)
+
+if df_players is None:
+    st.info("Upload a player CSV in the sidebar to see the Pro Layout.")
+else:
+    _pro_players = df_players[df_players["Team"] == sel_team]
+    if _pro_players.empty:
+        _tm = sel_team.lower()
+        _match = df_players[df_players["Team"].str.lower().str.contains(_tm[:8], na=False)]
+        if not _match.empty:
+            _pro_players = df_players[df_players["Team"] == _match["Team"].iloc[0]]
+
+    if _pro_players.empty:
+        st.info(f"No squad data found for **{sel_team}** in the player CSV.")
+    else:
+        sq_min_mins = st.session_state.get("sq_minmins_val", 0)
+        _pro_filt = _pro_players[_pro_players["Minutes played"] >= sq_min_mins].copy()
+
+        pro_html = render_pro_layout(
+            _pro_filt,
+            df_players_sc,
+            show_roles=show_roles,
+            show_mins=show_mins,
+            show_goals=show_goals,
+            show_assists=show_assists,
+            show_contracts=show_contracts,
+        )
+        st.markdown(pro_html, unsafe_allow_html=True)
+
+        # PNG export
+        _pro_png = make_sq_png_page(pro_html, sel_team + "_pro", 900)
+        st.download_button(
+            "⬇️ Download Pro Layout",
+            _pro_png.encode("utf-8"),
+            f"{sel_team.replace(' ', '_')}_pro_layout_OPEN_TO_SAVE_PNG.html",
+            "text/html",
+            help="Download → open in Chrome/Edge → PNG auto-saves",
+            key="pro_dl",
+        )
 
 st.markdown("---")
 st.caption("TEAM HQ + SQUAD · Wyscout data · Percentile ranks computed within league pool")

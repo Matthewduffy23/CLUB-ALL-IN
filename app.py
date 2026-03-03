@@ -667,15 +667,39 @@ def render_squad_pitch(team,league,formation,slots,slot_map,depth,df_sc,
             f'{depth_html}{legend}</div>')
 
 # ── Badge loaders ─────────────────────────────────────────────────────────────
-try:
-    from team_fotmob_urls import FOTMOB_TEAM_URLS as _FOTMOB_URLS
-except Exception:
-    _FOTMOB_URLS={}
+# Tries your repo filenames first, then common alternatives, then falls back silently.
 
-try:
-    from league_logo_urls import get_league_logo_url as _get_league_logo_url
-except Exception:
-    def _get_league_logo_url(lg): return ""
+_FOTMOB_URLS = {}
+for _badges_mod in ("badges", "team_fotmob_urls", "fotmob_urls"):
+    try:
+        _m = __import__(_badges_mod)
+        # badges.py may expose FOTMOB_TEAM_URLS or TEAM_URLS or a dict at module level
+        _FOTMOB_URLS = (
+            getattr(_m, "FOTMOB_TEAM_URLS", None)
+            or getattr(_m, "TEAM_URLS", None)
+            or getattr(_m, "BADGES", None)
+            or {}
+        )
+        break
+    except Exception:
+        pass
+
+_get_league_logo_url = lambda lg: ""
+for _logos_mod in ("leaguelogos", "league_logo_urls", "league_logos"):
+    try:
+        _m = __import__(_logos_mod)
+        if hasattr(_m, "get_league_logo_url"):
+            _get_league_logo_url = _m.get_league_logo_url
+        elif hasattr(_m, "LEAGUE_LOGO_URLS"):
+            import unicodedata as _ud
+            def _norm_key(s):
+                s = _ud.normalize("NFKD", str(s)).encode("ascii", "ignore").decode("ascii")
+                return " ".join(s.strip().lower().split())
+            _LL = {_norm_key(k): str(v).strip() for k, v in _m.LEAGUE_LOGO_URLS.items() if str(v).strip()}
+            _get_league_logo_url = lambda lg, _ll=_LL: _ll.get(_norm_key(lg), "")
+        break
+    except Exception:
+        pass
 
 @st.cache_data(show_spinner=False)
 def load_remote_img(url):
@@ -685,10 +709,18 @@ def load_remote_img(url):
     except: return None
 
 def fotmob_crest_url(team):
-    raw=(_FOTMOB_URLS.get(team) or "").strip()
+    raw = (_FOTMOB_URLS.get(team) or "").strip()
     if not raw: return ""
-    m=re.search(r"/teams/(\d+)/",raw)
-    return f"https://images.fotmob.com/image_resources/logo/teamlogo/{m.group(1)}.png" if m else ""
+    # Already a direct image URL (e.g. from badges.py storing .png links directly)
+    if raw.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".svg")):
+        return raw
+    # Fotmob team page URL — extract team ID
+    m = re.search(r"/teams/(\d+)/", raw)
+    if m: return f"https://images.fotmob.com/image_resources/logo/teamlogo/{m.group(1)}.png"
+    # Fotmob image URL with teamlogo path already
+    if "teamlogo" in raw or "fotmob.com" in raw:
+        return raw
+    return ""
 
 @st.cache_data(show_spinner=False)
 def get_team_badge(team):
@@ -918,8 +950,34 @@ def _s(v):
 # ═══════════════════════════════════════════════════════════════════════════════
 # HEADER — Team Name, League, Scores
 # ═══════════════════════════════════════════════════════════════════════════════
+import base64
+
 flag=flag_html(t_league)
 badge_img=get_team_badge(sel_team)
+
+def _img_to_b64(img_array):
+    buf=io.BytesIO(); plt.imsave(buf,img_array,format="png")
+    return base64.b64encode(buf.getvalue()).decode()
+
+# ── Club badge HTML ───────────────────────────────────────────────────────────
+if badge_img is not None:
+    badge_html_header=(f'<img src="data:image/png;base64,{_img_to_b64(badge_img)}" '
+                       f'style="width:80px;height:80px;object-fit:contain;border-radius:8px;"/>')
+else:
+    _raw_url=fotmob_crest_url(sel_team)
+    if _raw_url:
+        badge_html_header=(f'<img src="{_raw_url}" '
+                           f'style="width:80px;height:80px;object-fit:contain;border-radius:8px;" '
+                           f'onerror="this.style.display=\'none\'"/>')
+    else:
+        badge_html_header=('<div style="width:80px;height:80px;background:#111827;border-radius:8px;'
+                           'display:flex;align-items:center;justify-content:center;font-size:32px;">🏟️</div>')
+
+# ── League logo HTML ──────────────────────────────────────────────────────────
+_league_logo_url=_get_league_logo_url(t_league)
+league_logo_html=(f'<img src="{_league_logo_url}" '
+                  f'style="height:36px;width:36px;object-fit:contain;vertical-align:middle;margin-right:8px;" '
+                  f'onerror="this.style.display=\'none\'"/>') if _league_logo_url else ""
 
 # Build header HTML
 def score_chip(label,val):
@@ -932,30 +990,26 @@ def score_chip(label,val):
             f'padding:6px 16px;border-radius:8px;min-width:60px;text-align:center;">{v_str}</div>'
             f'</div>')
 
-badge_html_header=""
-if badge_img is not None:
-    # Convert to base64 for inline HTML
-    import base64
-    buf_b=io.BytesIO()
-    plt.imsave(buf_b,badge_img,format="png")
-    b64=base64.b64encode(buf_b.getvalue()).decode()
-    badge_html_header=f'<img src="data:image/png;base64,{b64}" style="width:80px;height:80px;object-fit:contain;border-radius:8px;"/>'
-else:
-    badge_html_header='<div style="width:80px;height:80px;background:#111827;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:32px;">🏟️</div>'
-
 st.markdown(f"""
 <div style="background:#0f1628;border:1px solid #1e2d4a;border-radius:16px;
             padding:24px 28px;margin-bottom:24px;display:flex;align-items:center;gap:24px;
             flex-wrap:wrap;">
-  <!-- Badge -->
+
+  <!-- Club badge -->
   <div style="flex-shrink:0;">{badge_html_header}</div>
 
-  <!-- Name + meta -->
+  <!-- Name + league meta -->
   <div style="flex:1;min-width:200px;">
     <div style="font-family:Montserrat,sans-serif;font-size:34px;font-weight:900;
                 color:#fff;letter-spacing:.03em;line-height:1.1;">{sel_team.upper()}</div>
-    <div style="margin-top:6px;font-size:14px;color:#9ca3af;font-weight:600;">
-      {flag}{t_league} &nbsp;·&nbsp; {t_country} &nbsp;·&nbsp; {t_region}
+    <div style="margin-top:8px;display:flex;align-items:center;font-size:14px;
+                color:#9ca3af;font-weight:600;gap:6px;flex-wrap:wrap;">
+      {league_logo_html}{flag}
+      <span>{t_league}</span>
+      <span style="color:#374151;">&nbsp;·&nbsp;</span>
+      <span>{t_country}</span>
+      <span style="color:#374151;">&nbsp;·&nbsp;</span>
+      <span>{t_region}</span>
     </div>
   </div>
 

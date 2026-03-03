@@ -567,6 +567,18 @@ def best_role_html(player,df_sc,fs="8px"):
             f'<span style="color:#7a8494;">{best}</span>'
             f'<span style="color:{sc_col};font-weight:700;min-width:22px;text-align:right;">{int(sc)}</span></div>')
 
+PORTRAIT_SVG_LINES="""
+  <rect  x="2"   y="2"     width="96" height="138" fill="none" stroke="#9ca3af" stroke-width="1.2" opacity=".18"/>
+  <line  x1="2"  y1="71"   x2="98"   y2="71"      stroke="#9ca3af" stroke-width=".8"  opacity=".18"/>
+  <circle cx="50" cy="71" r="10"                   fill="none" stroke="#9ca3af" stroke-width=".8"  opacity=".18"/>
+  <circle cx="50" cy="71" r="1.2"                  fill="#9ca3af" opacity=".18"/>
+  <rect  x="22"  y="2"     width="56" height="18"  fill="none" stroke="#9ca3af" stroke-width=".8"  opacity=".18"/>
+  <rect  x="36"  y="2"     width="28" height="7"   fill="none" stroke="#9ca3af" stroke-width=".6"  opacity=".18"/>
+  <circle cx="50" cy="14" r=".9"                   fill="#9ca3af" opacity=".18"/>
+  <rect  x="22"  y="122"   width="56" height="18"  fill="none" stroke="#9ca3af" stroke-width=".8"  opacity=".18"/>
+  <rect  x="36"  y="133"   width="28" height="7"   fill="none" stroke="#9ca3af" stroke-width=".6"  opacity=".18"/>
+  <circle cx="50" cy="126" r=".9"                  fill="#9ca3af" opacity=".18"/>"""
+
 def render_squad_pitch(team,league,formation,slots,slot_map,depth,df_sc,
                        show_mins=True,show_goals=True,show_assists=True,
                        show_roles=True,xi_only=False,best_role_only=False,

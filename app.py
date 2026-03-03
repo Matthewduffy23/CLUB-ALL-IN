@@ -912,6 +912,8 @@ with st.sidebar:
     best_role_only=st.toggle("Best role only",False,key="sq_bestonly")
     xi_only     =st.toggle("XI only",False,key="sq_xionly")
     show_contracts=st.toggle("Show contracts",True,key="sq_contracts")
+    sq_min_mins =st.slider("Min player minutes",0,3000,0,50,key="sq_minmins")
+    st.session_state["sq_minmins_val"]=sq_min_mins
     st.markdown("---")
     min_matches =st.slider("Min team matches played",0,80,5,key="sb_minmatches")
 
@@ -1125,10 +1127,10 @@ rot_shift_y=np.deg2rad(75)-angles_y[0]
 rot_angles_y=[(a+rot_shift_y)%(2*np.pi) for a in angles_y]
 bar_w_y=(2*np.pi/N_y)*0.85
 
-col_radar, col_info = st.columns([1, 1])
+col_radar, col_info = st.columns([3, 2])
 
 with col_radar:
-    fig_y=plt.figure(figsize=(7,6))
+    fig_y=plt.figure(figsize=(10,9))
     fig_y.patch.set_facecolor("#0a0f1c")
     ax_y=fig_y.add_axes([0.05,0.05,0.9,0.85],polar=True)
     ax_y.set_facecolor("#0a0f1c"); ax_y.set_rlim(0,100)
@@ -1150,8 +1152,8 @@ with col_radar:
         theta_ref=np.linspace(0,2*np.pi,500)
         ax_y.plot(theta_ref,[rp]*500,linestyle="dotted",lw=1.2,color="lightgrey",zorder=1)
     for i,lab in enumerate(labels_y):
-        ax_y.text(rot_angles_y[i],145,lab.upper(),ha='center',va='center',
-                  fontsize=9,weight='bold',color='white',zorder=5)
+        ax_y.text(rot_angles_y[i],155,lab.upper(),ha='center',va='center',
+                  fontsize=10,weight='bold',color='white',zorder=5)
     ax_y.set_xticks([]); ax_y.set_yticks([])
     ax_y.spines['polar'].set_visible(False); ax_y.grid(False)
 
@@ -1257,7 +1259,7 @@ with col_info:
   <div style="font-size:13px;color:#9ca3af;margin-bottom:12px;">
     Matches: <b style="color:#fff;">{int(t_row['Matches']) if pd.notna(t_row.get('Matches')) else '—'}</b>
     &nbsp;·&nbsp; Pts: <b style="color:#fff;">{int(t_row['Points']) if pd.notna(t_row.get('Points')) else '—'}</b>
-    ({_pts_str}) &nbsp;·&nbsp; xPts: <b style="color:#fff;">{float(t_row['Expected Points']):.1f if pd.notna(t_row.get('Expected Points')) else '—'}</b>
+    ({_pts_str}) &nbsp;·&nbsp; xPts: <b style="color:#fff;">{f"{float(t_row['Expected Points']):.1f}" if pd.notna(t_row.get('Expected Points')) else '—'}</b>
     ({_xpts_str})
   </div>
   {_stats_html}
@@ -1298,9 +1300,7 @@ else:
         st.info(f"No squad data found for **{sel_team}** in the player CSV. "
                 f"Check that the Team name matches exactly.")
     else:
-        with st.sidebar:
-            st.markdown("---")
-            sq_min_mins=st.slider("Min player minutes",0,3000,0,50,key="sq_minmins")
+        sq_min_mins=st.session_state.get("sq_minmins_val",0)
 
         _tp_filt=_team_players[_team_players["Minutes played"]>=sq_min_mins].copy()
         _tp_filt["_key"]=_tp_filt["Player"]
@@ -1330,14 +1330,13 @@ else:
         with _pc2:
             st.markdown(pitch_html,unsafe_allow_html=True)
 
-        # Formation sub-selector
-        with st.sidebar:
-            if st.button("🔄 Rebuild Squad",key="sq_rebuild"):
-                _sm,_dep=assign_players(players_list,formation)
-                st.session_state["_squad_slot_map"]=_sm
-                st.session_state["_squad_depth"]=_dep
-                st.session_state["_squad_cache_key"]=_cache_key
-                st.rerun()
+        # Rebuild button — placed below pitch to avoid sidebar context nesting issues
+        if st.button("🔄 Rebuild Squad", key="sq_rebuild"):
+            _sm,_dep=assign_players(players_list,formation)
+            st.session_state["_squad_slot_map"]=_sm
+            st.session_state["_squad_depth"]=_dep
+            st.session_state["_squad_cache_key"]=_cache_key
+            st.rerun()
 
         # Full squad table
         with st.expander("📋 Full Squad"):

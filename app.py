@@ -567,7 +567,173 @@ def best_role_html(player,df_sc,fs="8px"):
             f'<span style="color:#7a8494;">{best}</span>'
             f'<span style="color:{sc_col};font-weight:700;min-width:22px;text-align:right;">{int(sc)}</span></div>')
 
-# ── Squad pitch renderer ──────────────────────────────────────────────────────
+def best_role_data(player,df_sc):
+    """Returns (role_name, score, color) or None — used for matplotlib rendering."""
+    if df_sc is None or df_sc.empty: return None
+    rows=df_sc[df_sc["Player"]==player.get("Player","")]
+    if rows.empty: return None
+    row=rows.iloc[0]; rk=_role_key(player.get("Position",""))
+    scores={}
+    for rn in ROLE_BUCKETS.get(rk,{}):
+        v=row.get(f"_rs_{rn}",np.nan)
+        try:
+            fv=float(v)
+            if not np.isnan(fv): scores[rn]=fv
+        except: pass
+    if not scores: return None
+    best=max(scores,key=scores.get); sc=scores[best]
+    return (best,int(sc),score_to_color(sc))
+
+def all_role_data(player,df_sc):
+    """Returns list of (role_name, score, color, is_best) sorted by score desc."""
+    if df_sc is None or df_sc.empty: return []
+    rows=df_sc[df_sc["Player"]==player.get("Player","")]
+    if rows.empty: return []
+    row=rows.iloc[0]; rk=_role_key(player.get("Position",""))
+    scores={}
+    for rn in ROLE_BUCKETS.get(rk,{}):
+        v=row.get(f"_rs_{rn}",np.nan)
+        try:
+            fv=float(v)
+            if not np.isnan(fv): scores[rn]=fv
+        except: pass
+    if not scores: return []
+    best=max(scores,key=scores.get)
+    return [(rn,int(sc),score_to_color(sc),rn==best)
+            for rn,sc in sorted(scores.items(),key=lambda x:-x[1])]
+
+def render_squad_fig(team,league,formation,slots,slot_map,depth,df_sc,
+                     show_mins=True,show_goals=True,show_assists=True,
+                     show_roles=True,xi_only=False,best_role_only=False,
+                     show_contracts=True,show_positions=True):
+    """Build a matplotlib figure that matches the HTML pitch — used for both display and download."""
+    BG="#0a0f1c"
+    # Height: pitch portion (proportional) + depth strip if needed
+    n_depth=0 if (xi_only or not depth) else len(depth)
+    depth_rows=math.ceil(n_depth/8) if n_depth else 0
+    fig_h=14+depth_rows*1.2
+    fig,ax=plt.subplots(figsize=(11,fig_h))
+    fig.patch.set_facecolor(BG); ax.set_facecolor(BG)
+
+    # Coordinate system: x=0..100, y=0..142 (portrait pitch, y=0 top)
+    ax.set_xlim(0,100); ax.set_ylim(142+depth_rows*12,0)
+    ax.axis("off")
+
+    # ── Pitch markings ───────────────────────────────────────────────────────
+    lc="#9ca3af"; la=0.18; lw=0.8
+    ax.plot([2,98,98,2,2],[2,2,138,138,2],color=lc,alpha=la,lw=lw)
+    ax.axhline(71,color=lc,alpha=la,lw=lw,xmin=0.02,xmax=0.98)
+    ax.add_patch(plt.Circle((50,71),10,fill=False,color=lc,alpha=la,lw=lw))
+    ax.plot([0.5,0.5],[71,71],color=lc,alpha=la,lw=lw,marker="o",ms=2)
+    for (x1,y1,x2,y2) in [(22,2,78,2),(22,20,78,20),(36,2,64,2),(36,9,64,9),
+                           (22,120,78,120),(22,138,78,138),(36,131,64,131),(36,138,64,138)]:
+        ax.plot([x1,x2],[y1,y2],color=lc,alpha=la,lw=lw)
+    ax.plot([49,51],[2,2],color=lc,alpha=la,lw=lw,marker="o",ms=2)
+
+    # ── Slot nodes ───────────────────────────────────────────────────────────
+    for slot in slots:
+        sx=float(slot["x"]); sy=float(slot["y"])
+        # Position badge box
+        ax.text(sx,sy-5,slot["label"],ha="center",va="center",
+                fontsize=9,fontweight="black",color="#ef4444",
+                fontfamily="monospace",
+                bbox=dict(boxstyle="square,pad=0.3",fc=BG,ec="#ef4444",lw=1.5))
+
+        ps_all=slot_map.get(slot["id"],[])
+        ps=ps_all[:1] if xi_only else ps_all
+
+        y_cursor=sy+1.5
+        for i,p in enumerate(ps):
+            yrs=contract_years(p.get("Contract expires",""))
+            loan=is_loan(p); _lo=is_loaned_out(p); _yt=is_youth(p)
+            pcol=player_css_color(yrs,loan,_lo,_yt)
+            yr_s=f"+{yrs}" if yrs>=0 else "+?"
+            oop_s=f" ({p['_primary_pos']})" if (show_positions and p.get("_show_pos")) else ""
+            suf=" L"+oop_s if loan else f"{(yr_s if show_contracts else '')}{oop_s}"
+            fw="bold" if i==0 else "normal"
+            ax.text(sx,y_cursor,f"{p['Player']} {suf}",ha="center",va="top",
+                    fontsize=7 if i==0 else 6,fontweight=fw,color=pcol,
+                    fontfamily="monospace",clip_on=True)
+            y_cursor+=5.5 if i==0 else 5.0
+
+            # Stats line
+            parts=[]
+            if show_mins: parts.append(f"{int(float(p.get('Minutes played') or 0))}'")
+            if show_goals:
+                g=float(p.get("Goals") or 0)
+                if g>0: parts.append(f"{int(g)}G")
+            if show_assists:
+                a=float(p.get("Assists") or 0)
+                if a>0: parts.append(f"{int(a)}A")
+            if parts:
+                ax.text(sx,y_cursor," ".join(parts),ha="center",va="top",
+                        fontsize=5.5,color="#9ca3af",fontfamily="monospace",clip_on=True)
+                y_cursor+=4.5
+
+            # Role scores
+            if show_roles:
+                if best_role_only or i>0:
+                    rd=best_role_data(p,df_sc)
+                    if rd:
+                        rn,sc,rcol=rd
+                        ax.text(sx-10,y_cursor,rn,ha="left",va="top",
+                                fontsize=5,color="#7a8494",fontfamily="monospace",clip_on=True)
+                        ax.text(sx+10,y_cursor,str(sc),ha="right",va="top",
+                                fontsize=5,color=rcol,fontweight="bold",fontfamily="monospace",clip_on=True)
+                        y_cursor+=4
+                elif i==0:
+                    for rn,sc,rcol,is_b in all_role_data(p,df_sc):
+                        nc=rcol if is_b else "#7a8494"
+                        ax.text(sx-10,y_cursor,rn,ha="left",va="top",
+                                fontsize=5,color=nc,fontweight="bold" if is_b else "normal",
+                                fontfamily="monospace",clip_on=True)
+                        ax.text(sx+10,y_cursor,str(sc),ha="right",va="top",
+                                fontsize=5,color=rcol,fontweight="bold" if is_b else "normal",
+                                fontfamily="monospace",clip_on=True)
+                        y_cursor+=3.8
+
+    # ── Depth strip ──────────────────────────────────────────────────────────
+    if not xi_only and depth:
+        dy_start=143
+        ax.text(50,dy_start,"— DEPTH —",ha="center",va="top",
+                fontsize=7,fontweight="black",color="#6b7280",fontfamily="monospace")
+        dy_start+=5
+        for di,p in enumerate(depth):
+            col_i=di%8; row_i=di//8
+            dx=6+col_i*12; dy=dy_start+row_i*11
+            yrs=contract_years(p.get("Contract expires",""))
+            loan=is_loan(p); _lo=is_loaned_out(p); _yt=is_youth(p)
+            pcol=player_css_color(yrs,loan,_lo,_yt)
+            pos_t=_tok(p.get("Position",""))
+            dep_yr="L" if loan else (f"+{yrs}" if yrs>=0 else "+?")
+            ax.text(dx,dy,p["Player"],ha="center",va="top",
+                    fontsize=5.5,fontweight="bold",color=pcol,fontfamily="monospace",clip_on=True)
+            ax.text(dx,dy+4,f"{pos_t} {dep_yr}",ha="center",va="top",
+                    fontsize=4.5,color="#6b7280",fontfamily="monospace",clip_on=True)
+            if show_roles:
+                rd=best_role_data(p,df_sc)
+                if rd:
+                    rn,sc,rcol=rd
+                    ax.text(dx,dy+7.5,f"{rn[:14]} {sc}",ha="center",va="top",
+                            fontsize=4,color=rcol,fontfamily="monospace",clip_on=True)
+
+    # ── Legend ───────────────────────────────────────────────────────────────
+    legend_y=ax.get_ylim()[0]-2
+    legend_items=[("#fff","Contracted"),("#f59e0b","Final Yr"),("#ef4444","OOC"),
+                  ("#22c55e","Loan In"),("#eab308","Loan Out"),("#9ca3af","Youth")]
+    lx=2
+    for lcol,ltxt in legend_items:
+        ax.text(lx,legend_y,ltxt,ha="left",va="bottom",fontsize=5.5,
+                color=lcol,fontfamily="monospace")
+        lx+=17
+
+    ax.text(50,140,f"{team.upper()}  ·  {formation}",ha="center",va="top",
+            fontsize=8,fontweight="bold",color="#6b7280",fontfamily="monospace")
+
+    fig.tight_layout(pad=0.3)
+    return fig
+
+
 PORTRAIT_SVG_LINES="""
   <rect  x="2"   y="2"     width="96" height="138" fill="none" stroke="#9ca3af" stroke-width="1.2" opacity=".18"/>
   <line  x1="2"  y1="71"   x2="98"   y2="71"      stroke="#9ca3af" stroke-width=".8"  opacity=".18"/>
@@ -1336,84 +1502,21 @@ else:
         depth_sq=st.session_state["_squad_depth"]
         slots_sq=FORMATIONS[formation]
 
-        pitch_html=render_squad_pitch(
+        fig_sq=render_squad_fig(
             sel_team,t_league,formation,slots_sq,slot_map_sq,depth_sq,df_players_sc,
             show_mins=show_mins,show_goals=show_goals,show_assists=show_assists,
             show_roles=show_roles,xi_only=xi_only,best_role_only=best_role_only,
             show_contracts=show_contracts,show_positions=show_positions
         )
-
-        # Render pitch in a centered constrained column
         _pc1,_pc2,_pc3=st.columns([1,4,1])
         with _pc2:
-            st.markdown(pitch_html,unsafe_allow_html=True)
-
-        # ── Download depth chart (same pattern as radar) ─────────────────────
-        _BG_sq="#0a0f1c"
-        _fig_sq, _ax_sq = plt.subplots(figsize=(10,14))
-        _fig_sq.patch.set_facecolor(_BG_sq); _ax_sq.set_facecolor(_BG_sq)
-        _ax_sq.set_xlim(0,100); _ax_sq.set_ylim(0,100); _ax_sq.invert_yaxis()
-        _ax_sq.axis("off")
-        _lc="#9ca3af"; _la=0.18; _lw=0.8
-        _ax_sq.plot([2,98,98,2,2],[2,2,98,98,2],color=_lc,alpha=_la,lw=_lw)
-        _ax_sq.axhline(50,color=_lc,alpha=_la,lw=_lw)
-        _ax_sq.add_patch(plt.Circle((50,50),7,fill=False,color=_lc,alpha=_la,lw=_lw))
-        for (_x1,_y1,_x2,_y2) in [(22,2,78,2),(22,14,78,14),(36,2,64,2),(36,7,64,7),
-                                   (22,86,78,86),(22,98,78,98),(36,86,64,86),(36,93,64,93)]:
-            _ax_sq.plot([_x1,_x2],[_y1,_y2],color=_lc,alpha=_la,lw=_lw)
-        _ax_sq.text(50,99,f"{sel_team.upper()}  ·  {formation}",
-                ha="center",va="bottom",fontsize=11,fontweight="bold",
-                color="#6b7280",fontfamily="monospace")
-        for _slot in slots_sq:
-            _xs=float(_slot["x"]); _ys=float(_slot["y"])
-            _ax_sq.text(_xs,_ys-6,_slot["label"],ha="center",va="center",
-                    fontsize=10,fontweight="black",color="#ef4444",
-                    bbox=dict(boxstyle="square,pad=0.25",fc=_BG_sq,ec="#ef4444",lw=1.5))
-            _ps=slot_map_sq.get(_slot["id"],[])
-            if xi_only: _ps=_ps[:1]
-            for _i,_p in enumerate(_ps):
-                _yrs=contract_years(_p.get("Contract expires",""))
-                _loan=is_loan(_p); _lo2=is_loaned_out(_p); _yt2=is_youth(_p)
-                _pcol=player_css_color(_yrs,_loan,_lo2,_yt2)
-                _yr_s=f"+{_yrs}" if _yrs>=0 else "+?"
-                _oop2=f" ({_p['_primary_pos']})" if (show_positions and _p.get("_show_pos")) else ""
-                _suf=" L"+_oop2 if _loan else f"{(_yr_s if show_contracts else '')}{_oop2}"
-                _parts=[]
-                if show_mins: _parts.append(f"{int(float(_p.get('Minutes played') or 0))}'")
-                if show_goals:
-                    _g=float(_p.get("Goals") or 0)
-                    if _g>0: _parts.append(f"{int(_g)}G")
-                if show_assists:
-                    _a=float(_p.get("Assists") or 0)
-                    if _a>0: _parts.append(f"{int(_a)}A")
-                _yoff=_ys+_i*8
-                _ax_sq.text(_xs,_yoff,f"{_p['Player']} {_suf}",ha="center",va="center",
-                        fontsize=7.5,fontweight="bold" if _i==0 else "normal",
-                        color=_pcol,fontfamily="monospace",clip_on=True)
-                if _parts:
-                    _ax_sq.text(_xs,_yoff+3.5," ".join(_parts),ha="center",va="center",
-                            fontsize=6,color="#9ca3af",fontfamily="monospace",clip_on=True)
-        if not xi_only and depth_sq:
-            _ax_sq.text(50,96,"DEPTH",ha="center",va="center",fontsize=7,
-                    fontweight="black",color="#6b7280",fontfamily="monospace")
-            for _di,_p in enumerate(depth_sq[:12]):
-                _dx=5+_di*8; _dy=92
-                _yrs=contract_years(_p.get("Contract expires",""))
-                _loan=is_loan(_p); _lo2=is_loaned_out(_p); _yt2=is_youth(_p)
-                _pcol=player_css_color(_yrs,_loan,_lo2,_yt2)
-                _pos_t=_tok(_p.get("Position",""))
-                _dep_yr="L" if _loan else (f"+{_yrs}" if _yrs>=0 else "+?")
-                _ax_sq.text(_dx,_dy,_p["Player"],ha="center",va="center",
-                        fontsize=5.5,fontweight="bold",color=_pcol,fontfamily="monospace",clip_on=True)
-                _ax_sq.text(_dx,_dy+2.5,f"{_pos_t} {_dep_yr}",ha="center",va="center",
-                        fontsize=4.5,color="#6b7280",fontfamily="monospace",clip_on=True)
-        _buf_sq=io.BytesIO()
-        _fig_sq.savefig(_buf_sq,format="png",dpi=200,bbox_inches="tight",facecolor=_BG_sq)
-        st.download_button("⬇️ Download Depth Chart",_buf_sq.getvalue(),
+            st.pyplot(fig_sq,use_container_width=True)
+        buf_sq=io.BytesIO()
+        fig_sq.savefig(buf_sq,format="png",dpi=200,bbox_inches="tight",facecolor="#0a0f1c")
+        st.download_button("⬇️ Download Depth Chart",buf_sq.getvalue(),
                            f"{sel_team.replace(' ','_')}_squad_{formation}.png","image/png",
                            key="sq_dl")
-        plt.close(_fig_sq)
-
+        plt.close(fig_sq)
         # Rebuild button — placed below pitch to avoid sidebar context nesting issues
         if st.button("🔄 Rebuild Squad", key="sq_rebuild"):
             _sm,_dep=assign_players(players_list,formation)

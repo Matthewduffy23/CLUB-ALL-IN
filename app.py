@@ -1865,52 +1865,35 @@ _PRO_CSS = """
 :root { --card:#141823; }
 .pro-wrap{ display:flex; justify-content:center; }
 .pro-card{
-  position:relative; width:min(500px,96%);
-  display:grid; grid-template-columns:96px 100px 1fr;
-  column-gap:14px; align-items:start;
+  position:relative; width:min(420px,96%);
+  display:grid; grid-template-columns:96px 1fr 48px;
+  gap:12px; align-items:start;
   background:var(--card); border:1px solid rgba(255,255,255,.06);
-  border-radius:20px; padding:16px 44px 16px 16px; margin-bottom:12px;
+  border-radius:20px; padding:16px; margin-bottom:12px;
   box-shadow:inset 0 1px 0 rgba(255,255,255,.03), 0 6px 24px rgba(0,0,0,.35);
 }
-/* col 1 — avatar */
 .pro-avatar{ width:96px; height:96px; border-radius:12px; border:1px solid #2a3145; overflow:hidden; background:#0b0d12; }
 .pro-avatar img{ width:100%; height:100%; object-fit:cover; image-rendering:auto; transform:translateZ(0); }
-/* col 2 — meta stacked: flag+age | mins | foot | [flex spacer] | contract | team·league */
-.pro-meta{
-  display:flex; flex-direction:column;
-  justify-content:space-between;
-  height:96px; padding:2px 0;
-  overflow:hidden;
-}
-.meta-top{ display:flex; flex-direction:column; gap:3px; }
-.meta-bottom{ display:flex; flex-direction:column; gap:3px; }
-.meta-flag-age{ display:flex; align-items:center; gap:5px; }
-.meta-mins{ color:#a6a6a6; font-size:13.5px; font-weight:600; line-height:1; }
-.meta-foot{ color:#a6a6a6; font-size:13.5px; font-weight:600; line-height:1; }
-.meta-contract{ color:#a6a6a6; font-size:13px; font-weight:700; line-height:1; letter-spacing:.04em; }
-.meta-team{
-  color:#dbe3ff; font-size:11.5px; font-weight:600; line-height:1.2;
-  opacity:.95; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-  display:flex; align-items:center; gap:4px;
-}
-.meta-team img.crest-sm{ height:13px; width:auto; object-fit:contain; flex-shrink:0; }
-/* col 3 — name + roles + position */
-.pro-right{ display:flex; flex-direction:column; min-height:96px; }
-.pro-right-top{ flex:1; }
-.flagchip{ display:inline-flex; align-items:center; gap:5px; background:transparent; border:none; padding:0; height:auto; }
-.flagchip img{ width:20px; height:14px; border-radius:2px; display:block; }
-.chip{ background:transparent; color:#a6a6a6; border:none; padding:0; border-radius:0; font-size:13.5px; line-height:18px; opacity:.92; }
+.flagchip{ display:inline-flex; align-items:center; gap:6px; background:transparent; border:none; padding:0; height:auto; }
+.flagchip img{ width:26px; height:18px; border-radius:2px; display:block; }
+.chip{ background:transparent; color:#a6a6a6; border:none; padding:0; border-radius:0; font-size:15px; line-height:18px; opacity:.92; }
+.row{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:2px 0; }
+.leftrow1{ margin-top:6px; } .leftrow-foot{ margin-top:2px; } .leftrow-contract{ margin-top:10px; }
 .pill{
-  min-width:32px; height:25px; padding:0 7px; border-radius:6px;
+  min-width:36px; height:28px; padding:0 8px; border-radius:6px;
   display:inline-flex; align-items:center; justify-content:center;
-  font-weight:800; font-size:16px; color:#0b0d12; box-sizing:border-box;
+  font-weight:800; font-size:18px; color:#0b0d12; box-sizing:border-box;
 }
-.name{ font-weight:800; font-size:20px; color:#e8ecff; margin-bottom:4px; letter-spacing:.2px; line-height:1.15; }
-.sub{ color:#a8b3cf; font-size:13.5px; opacity:.9; }
-.role-row{ display:flex; gap:7px; align-items:center; margin:2px 0; }
-.posrow{ display:flex; flex-wrap:wrap; gap:0; margin-top:8px; }
-.postext{ font-weight:600; font-size:13px; letter-spacing:.2px; margin-right:9px; }
-.rank{ position:absolute; top:10px; right:12px; color:#b7bfe1; font-weight:800; font-size:17px; text-align:right; pointer-events:none; }
+.name{ font-weight:800; font-size:22px; color:#e8ecff; margin-bottom:6px; letter-spacing:.2px; line-height:1.15; }
+.sub{ color:#a8b3cf; font-size:15px; opacity:.9; }
+.role-row{ display:flex; gap:8px; align-items:center; margin:2px 0; }
+.posrow{ margin-top:13.5px; }
+.postext{ font-weight:600; font-size:14.5px; letter-spacing:.2px; margin-right:11px; }
+.rank{ position:absolute; top:10.5px; right:14px; color:#b7bfe1; font-weight:800; font-size:18px; text-align:right; pointer-events:none; }
+.teamline{ color:#dbe3ff; font-size:14px; font-weight:600; margin-top:6.5px; letter-spacing:.05px; opacity:.95; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.tl-wrap{ position:relative; } .tl-has-crest{ padding-left:24px; }
+.crest-icon{ height:1.35em; width:auto; object-fit:contain; image-rendering:auto; }
+.crest-abs{ position:absolute; left:0; top:50%; transform:translateY(-50%); pointer-events:none; }
 .grp-header{
   font-size:9px; font-weight:900; letter-spacing:.18em; color:#ef4444;
   text-transform:uppercase; margin:18px 0 8px 0;
@@ -1918,11 +1901,11 @@ _PRO_CSS = """
 }
 .m-sec{ background:#121621; border:1px solid #242b3b; border-radius:14px; padding:9px 11px; }
 .m-title{ color:#e8ecff; font-weight:800; letter-spacing:.02em; margin:4px 0 8px 0; font-size:12px; }
-.m-row{ display:flex; align-items:center; gap:8px; padding:5px 6px; border-radius:8px; }
-.m-label{ color:#c9d3f2; font-size:13.5px; flex:1 1 0%; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.m-row{ display:flex; align-items:center; gap:8px; padding:6px 6px; border-radius:8px; }
+.m-label{ color:#c9d3f2; font-size:14.5px; flex:1 1 0%; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .m-right{ display:flex; align-items:center; gap:8px; flex:0 0 auto; }
-.m-val{ color:#a8b3cf; font-size:12px; opacity:.9; min-width:44px; text-align:right; }
-.m-badge{ min-width:38px; text-align:center; padding:2px 8px; border-radius:7px; font-weight:800; font-size:16px; color:#0b0d12; }
+.m-val{ color:#a8b3cf; font-size:12px; opacity:.9; min-width:48px; text-align:right; }
+.m-badge{ min-width:40px; text-align:center; padding:2px 9px; border-radius:7px; font-weight:800; font-size:17px; color:#0b0d12; }
 .metrics-grid{ display:grid; grid-template-columns:1fr; gap:10px; }
 @media (min-width:720px){ .metrics-grid{ grid-template-columns:repeat(3,1fr); } }
 </style>
@@ -2080,7 +2063,7 @@ def render_pro_layout_v2(team_players_df: pd.DataFrame, df_sc, df_full: pd.DataF
                     f'<span class="sub">{lbl}</span></div>'
                 )
 
-        # ── crest for meta column ──────────────────────────────────────────
+        # ── crest ──────────────────────────────────────────────────────────
         crest_store_key = f"{_norm_str(team)}|{_norm_str(league)}"
         crest_url = st.session_state["crest_map"].get(crest_store_key, "")
         if not crest_url:
@@ -2089,38 +2072,31 @@ def render_pro_layout_v2(team_players_df: pd.DataFrame, df_sc, df_full: pd.DataF
                 tid = re.search(r"/teams/(\d+)/", t_url)
                 crest_url = f"https://images.fotmob.com/image_resources/logo/teamlogo/{tid.group(1)}.png" if tid else ""
 
-        crest_img = f'<img class="crest-sm" src="{crest_url}" alt="">' if crest_url else ""
-        team_meta_html = (
-            f'<div class="meta-team">{crest_img}'
-            f'<span>{team}&nbsp;·&nbsp;{league}</span></div>'
-        )
+        if crest_url:
+            teamline_html = (
+                '<div class="teamline tl-wrap tl-has-crest">'
+                f'<img class="crest-icon crest-abs" src="{crest_url}" alt="">'
+                f'<span>{team} \u00b7 {league}</span></div>'
+            )
+        else:
+            teamline_html = f'<div class="teamline">{team} \u00b7 {league}</div>'
 
         card_html = (
             '<div class="pro-wrap">'
             '<div class="pro-card">'
-            # col 1 — avatar
+            '<div class="leftcol">'
             '<div class="pro-avatar">'
             f'<img src="{avatar_url}" alt="{player}" loading="lazy" />'
             '</div>'
-            # col 2 — meta: top (flag+age, mins, foot) / bottom (contract, team·league)
-            '<div class="pro-meta">'
-            '<div class="meta-top">'
-            f'<div class="meta-flag-age">{flag}<span class="chip">{age_txt}</span></div>'
-            f'<div class="meta-mins">{mins_txt}</div>'
-            f'<div class="meta-foot">{foot}</div>'
+            f'<div class="row leftrow1">{flag}<span class="chip">{age_txt}</span></div>'
+            f'<div class="row leftrow-foot"><span class="chip">{mins_txt} &nbsp; {foot}</span></div>'
+            f'<div class="row leftrow-contract"><span class="chip">{contract_txt}</span></div>'
             '</div>'
-            '<div class="meta-bottom">'
-            f'<div class="meta-contract">{contract_txt}</div>'
-            f'{team_meta_html}'
-            '</div>'
-            '</div>'
-            # col 3 — name, roles, position
-            '<div class="pro-right">'
-            '<div class="pro-right-top">'
+            '<div>'
             f'<div class="name">{player}</div>'
             f'{pills_html}'
-            '</div>'
-            f'<div class="posrow">{pos_html}</div>'
+            f'<div class="row posrow">{pos_html}</div>'
+            f'{teamline_html}'
             '</div>'
             f'<div class="rank">#{rank_i:02d}</div>'
             '</div>'
@@ -2128,7 +2104,7 @@ def render_pro_layout_v2(team_players_df: pd.DataFrame, df_sc, df_full: pd.DataF
         )
         st.markdown(card_html, unsafe_allow_html=True)
 
-        atts, defs, poss = _GROUP_METRICS.get(grp, (_ATT_METRICS, _DEF_METRICS, _POS_METRICS))
+        atts, defs, poss = _GROUP_METRICS.get(grp, (_CM_ATT_METRICS, _CM_DEF_METRICS, _CM_POS_METRICS))
 
         ref_mask = (df_ref["Player"] == player) & (df_ref["Team"] == team)
         ref_rows = df_ref[ref_mask]

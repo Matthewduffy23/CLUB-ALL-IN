@@ -878,45 +878,39 @@ PRO_LAYOUT_GROUPS = [
 # Role pills per group  →  list of (score_col, display_label)
 _GROUP_ROLES = {
     "CF / ST": [
-        ("Goal Threat CF Score",    "Goal Threat"),
-        ("Link-Up CF Score",        "Link-Up"),
-        ("Target Man CF Score",     "Target Man"),
+        ("_rs_Goal Threat CF",  "Goal Threat"),
+        ("_rs_Link Up CF",      "Link-Up"),
+        ("_rs_Target Man CF",   "Target Man"),
     ],
     "AM / W": [
-        ("Goal Threat Score",       "Goal Threat"),
-        ("Playmaker Score",         "Playmaker"),
-        ("Ball Carrier Score",      "Ball Carrier"),
-        ("Modern Winger Score",     "Modern Winger"),
-        ("Traditional Winger Score","Traditional Winger"),
+        ("_rs_Goal Threat ATT", "Goal Threat"),
+        ("_rs_Playmaker ATT",   "Playmaker"),
+        ("_rs_Ball Carrier ATT","Ball Carrier"),
     ],
     "CM": [
-        ("Deep Playmaker CM Score", "Deep Playmaker"),
-        ("Advanced Playmaker CM Score","Advanced Playmaker"),
-        ("Box to Box Score",        "Box to Box"),
-        ("Ball Winner Score",       "Ball Winner"),
-        ("Defensive Midfielder DM Score","Def. MF"),
+        ("_rs_Defensive CM",          "Defensive"),
+        ("_rs_Advanced Playmaker CM", "Advanced Playmaker"),
+        ("_rs_Deep Playmaker CM",     "Deep Playmaker"),
     ],
     "DM": [
-        ("Defensive Midfielder DM Score","Def. MF"),
-        ("Modern 6 Score",          "Modern 6"),
-        ("Ball Winner Score",       "Ball Winner"),
-        ("Deep Playmaker CM Score", "Deep Playmaker"),
+        ("_rs_Defensive CM",          "Defensive"),
+        ("_rs_Deep Playmaker CM",     "Deep Playmaker"),
+        ("_rs_Ball Carrying CM",      "Ball Carrying"),
     ],
     "FB": [
-        ("Build Up FB Score",       "Build Up"),
-        ("Attacking FB Score",      "Attacking"),
-        ("Defensive FB Score",      "Defensive"),
-        ("Wide Creator Score",      "Wide Creator"),
+        ("_rs_Build Up FB",    "Build Up"),
+        ("_rs_Attacking FB",   "Attacking"),
+        ("_rs_Defensive FB",   "Defensive"),
     ],
     "CB": [
-        ("Ball Playing CB Score",   "Ball Playing"),
-        ("Wide CB Score",           "Wide CB"),
-        ("Box Defender Score",      "Box Defender"),
+        ("_rs_Ball Playing CB","Ball Playing"),
+        ("_rs_Wide CB",        "Wide CB"),
+        ("_rs_Box Defender",   "Box Defender"),
     ],
     "GK": [
-        ("Shot Stopper GK Score",   "Shot Stopper"),
-        ("Ball Playing GK Score",   "Ball Playing GK"),
-        ("Sweeper GK Score",        "Sweeper GK"),
+        ("_rs_Shot Stopper GK","Shot Stopper"),
+        ("_rs_Ball Playing GK","Ball Playing GK"),
+        ("_rs_Sweeper GK",     "Sweeper GK"),
     ],
 }
 
@@ -1099,87 +1093,45 @@ _PRO_CSS = """
 """
 
 def render_pro_layout_v2(team_players_df: pd.DataFrame, df_sc, df_full: pd.DataFrame = None):
-    """
-    Pro layout for team squad.
-    - All players ordered by minutes played (no position-group headers)
-    - Percentiles computed per position-group × league from the full league CSV (df_full)
-    - Role pills are position-appropriate
-    - Photos loaded from FotMob, crests auto-resolved
-    """
     st.markdown(_PRO_CSS, unsafe_allow_html=True)
     st.session_state.setdefault("photo_map", {})
     st.session_state.setdefault("crest_map", {})
 
-    # ── Position-group key for a primary token ──────────────────────────────
-    _TOK_TO_GRP = {}
-    for grp_label, toks in PRO_LAYOUT_GROUPS:
-        for t in toks:
-            _TOK_TO_GRP[t] = grp_label
-
-    # ── Map each player's primary token to a group ──────────────────────────
+    # ── Position group lookup ─────────────────────────────────────────────
+    _TOK_TO_GRP = {t: lbl for lbl, toks in PRO_LAYOUT_GROUPS for t in toks}
     def _player_grp(pos_str):
-        t = _tok(str(pos_str))
-        return _TOK_TO_GRP.get(t, "CM")   # fallback to CM if unknown
+        return _TOK_TO_GRP.get(_tok(str(pos_str)), "CM")
 
-    # ── PERCENTILE COMPUTATION (position-group × league) ────────────────────
-    # Use df_full (full CSV) so percentiles compare the player against
-    # everyone in the same position pool in the same league.
-    # Metric columns we need percentiles for:
-    ALL_METRIC_COLS = list({met for _, met in
+    # ── Metric columns we need percentiles for ────────────────────────────
+    ALL_MET = list({met for _, met in
         _ATT_METRICS + _DEF_METRICS + _POS_METRICS + _GK_METRICS + _GK_POS_METRICS})
 
-    def _compute_percentiles(df_ref: pd.DataFrame) -> pd.DataFrame:
-        """
-        For each metric, rank within (league, position-group).
-        Returns df_ref with added '<metric> Percentile' columns.
-        """
-        df_ref = df_ref.copy()
-        df_ref["_grp"] = df_ref["Position"].apply(_player_grp)
-        for met in ALL_METRIC_COLS:
-            if met not in df_ref.columns:
+    # ── Compute percentiles: per (league, pos-group) from full CSV ─────────
+    @st.cache_data(show_spinner=False)
+    def _build_ref(df_raw: pd.DataFrame) -> pd.DataFrame:
+        df = df_raw.copy()
+        df["_grp"] = df["Position"].apply(_player_grp)
+        for met in ALL_MET:
+            if met not in df.columns:
                 continue
+            df[met] = pd.to_numeric(df[met], errors="coerce")
             pct_col = f"{met} Percentile"
-            df_ref[met] = pd.to_numeric(df_ref[met], errors="coerce")
-            df_ref[pct_col] = np.nan
-            for (league, grp), idx in df_ref.groupby(["League", "_grp"]).groups.items():
-                pool = df_ref.loc[idx, met].dropna()
+            df[pct_col] = np.nan
+            for (lg, grp), idx in df.groupby(["League", "_grp"]).groups.items():
+                pool = df.loc[idx, met].dropna()
                 if pool.empty:
                     continue
                 ranks = pool.rank(pct=True, method="average") * 100.0
-                df_ref.loc[ranks.index, pct_col] = ranks
-        return df_ref
+                df.loc[ranks.index, pct_col] = ranks
+        return df
 
-    # Build reference dataframe for percentiles
-    if df_full is not None and not df_full.empty:
-        df_ref = _compute_percentiles(df_full)
-    elif df_sc is not None and not df_sc.empty:
-        df_ref = _compute_percentiles(df_sc)
-    else:
-        df_ref = _compute_percentiles(team_players_df)
+    ref_src = df_full if (df_full is not None and not df_full.empty) else \
+              df_sc   if (df_sc   is not None and not df_sc.empty)   else \
+              team_players_df
+    df_ref = _build_ref(ref_src)
 
-    # ── Role scores: compute per player from percentiles ────────────────────
-    def _role_score(player_row, role_pairs):
-        """Weighted average of available percentiles for a role."""
-        total_w, wsum = 0.0, 0.0
-        for met, w in role_pairs.items():
-            pct_col = f"{met} Percentile"
-            if pct_col in df_ref.columns:
-                # look up this player in df_ref
-                mask = (df_ref["Player"] == player_row.get("Player","")) &                        (df_ref["Team"]   == player_row.get("Team",""))
-                hits = df_ref.loc[mask, pct_col].dropna()
-                if not hits.empty:
-                    wsum += float(hits.iloc[0]) * w
-                    total_w += w
-        return (wsum / total_w) if total_w > 0 else 0.0
-
-    # ── Merge existing role score cols from df_sc ────────────────────────────
-    df_team = team_players_df.copy()
-    if df_sc is not None and not df_sc.empty:
-        score_cols = [c for c in df_sc.columns if c == "Player" or
-                      c not in df_team.columns]
-        df_team = df_team.merge(df_sc[score_cols], on="Player", how="left")
-
-    # ── Sort all players by minutes played descending ────────────────────────
+    # ── Build team list: deduplicate, sort by minutes ─────────────────────
+    df_team = team_players_df.drop_duplicates(subset=["Player", "Team"]).copy()
     mins_col = "Minutes played"
     if mins_col in df_team.columns:
         df_team[mins_col] = pd.to_numeric(df_team[mins_col], errors="coerce")
@@ -1190,23 +1142,34 @@ def render_pro_layout_v2(team_players_df: pd.DataFrame, df_sc, df_full: pd.DataF
         st.info("No players found for this team.")
         return
 
-    for i, row in df_team.iterrows():
-        player  = str(row.get("Player", "")) or ""
-        team    = str(row.get("Team", ""))   or ""
-        league  = str(row.get("League", "")) or ""
-        pos     = str(row.get("Position", "")) or ""
+    # ── Role score from df_ref percentiles ────────────────────────────────
+    def _role_score_from_ref(player, team, metrics: dict) -> float:
+        mask = (df_ref["Player"] == player) & (df_ref["Team"] == team)
+        hits = df_ref[mask]
+        if hits.empty:
+            return 0.0
+        r = hits.iloc[0]
+        total_w, wsum = 0.0, 0.0
+        for met, w in metrics.items():
+            pct_col = f"{met} Percentile"
+            if pct_col in r.index and pd.notna(r[pct_col]):
+                wsum += float(r[pct_col]) * w
+                total_w += w
+        return (wsum / total_w) if total_w > 0 else 0.0
+
+    for rank_i, (_, row) in enumerate(df_team.iterrows(), start=1):
+        player  = str(row.get("Player", "") or "")
+        team    = str(row.get("Team",   "") or "")
+        league  = str(row.get("League", "") or "")
+        pos     = str(row.get("Position", "") or "")
         grp     = _player_grp(pos)
 
-        try:
-            mins = int(float(row.get(mins_col) or 0))
-        except Exception:
-            mins = 0
+        try:    mins = int(float(row.get(mins_col) or 0))
+        except: mins = 0
         mins_txt = f"{mins}\u2032"
 
-        try:
-            age_val = int(float(row.get("Age") or 0)) if not pd.isna(row.get("Age", np.nan)) else 0
-        except Exception:
-            age_val = 0
+        try:    age_val = int(float(row.get("Age") or 0)) if pd.notna(row.get("Age", np.nan)) else 0
+        except: age_val = 0
         age_txt = f"{age_val}y.o." if age_val > 0 else "\u2014"
 
         cy  = pd.to_datetime(row.get("Contract expires"), errors="coerce")
@@ -1218,14 +1181,12 @@ def render_pro_layout_v2(team_players_df: pd.DataFrame, df_sc, df_full: pd.DataF
         flag  = _flag_html(birth)
 
         # pos chips
-        raw_pos = pos.strip().upper()
-        codes   = [c for c in re.split(r"[,\s/;]+", raw_pos) if c]
+        codes = [c for c in re.split(r"[,\s/;]+", pos.strip().upper()) if c]
         seen, ordered = set(), []
         for c in codes:
-            if c not in seen:
-                seen.add(c); ordered.append(c)
+            if c not in seen: seen.add(c); ordered.append(c)
         pos_html = "".join(
-            f"<span class=\"postext\" style=\"color:{_pro_chip_color(c)}\">{c}</span>"
+            f'<span class="postext" style="color:{_pro_chip_color(c)}">{c}</span>'
             for c in ordered
         )
 
@@ -1249,77 +1210,82 @@ def render_pro_layout_v2(team_players_df: pd.DataFrame, df_sc, df_full: pd.DataF
 
         if crest_url:
             teamline_html = (
-                "<div class=\"teamline tl-wrap tl-has-crest\">"
-                f"<img class=\"crest-icon crest-abs\" src=\"{crest_url}\" alt=\"\">"
-                f"<span>{team} \u00b7 {league}</span></div>"
+                '<div class="teamline tl-wrap tl-has-crest">'
+                f'<img class="crest-icon crest-abs" src="{crest_url}" alt="">'
+                f'<span>{team} \u00b7 {league}</span></div>'
             )
         else:
-            teamline_html = f"<div class=\"teamline\">{team} \u00b7 {league}</div>"
+            teamline_html = f'<div class="teamline">{team} \u00b7 {league}</div>'
 
-        # ── role pills: use position-group-appropriate roles ─────────────────
+        # ── role pills: position-group specific, from _rs_ cols in df_sc ──
         all_role_pairs = _GROUP_ROLES.get(grp, [])
-        # Use pre-computed score cols if available, else compute on the fly
         pills_html = ""
-        for col, lbl in all_role_pairs[:3]:
-            if col in row.index and pd.notna(row.get(col)):
-                val = _show99(row[col])
+
+        # Look up this player's scores in df_sc (has _rs_* cols)
+        sc_row = None
+        if df_sc is not None and not df_sc.empty:
+            sc_mask = (df_sc["Player"] == player) & (df_sc["Team"] == team)
+            sc_hits = df_sc[sc_mask]
+            if not sc_hits.empty:
+                sc_row = sc_hits.iloc[0]
+
+        for col_name, lbl in all_role_pairs[:3]:
+            val = 0
+            # Try _rs_ col from df_sc first
+            if sc_row is not None and col_name in sc_row.index and pd.notna(sc_row[col_name]):
+                val = _show99(sc_row[col_name])
             else:
-                # compute from ROLE_BUCKETS
+                # Compute from ROLE_BUCKETS metrics via df_ref percentiles
                 rk = ROLE_KEY_MAP.get(_tok(pos), "ATT")
                 bucket_roles = ROLE_BUCKETS.get(rk, {})
-                # find matching bucket by name similarity
-                matched_metrics = {}
+                # match role bucket by label
+                metrics = {}
                 for rn, spec in bucket_roles.items():
-                    if any(w in lbl for w in rn.split()):
-                        matched_metrics = spec.get("metrics", {})
-                        break
-                if not matched_metrics:
-                    # just take first matching col name
-                    for rn, spec in bucket_roles.items():
-                        matched_metrics = spec.get("metrics", {}); break
-                val = _show99(_role_score(row, matched_metrics))
+                    if lbl.lower().replace(" ", "") in rn.lower().replace(" ", ""):
+                        metrics = spec.get("metrics", {}); break
+                if not metrics and bucket_roles:
+                    metrics = next(iter(bucket_roles.values())).get("metrics", {})
+                val = _show99(_role_score_from_ref(player, team, metrics))
             pills_html += (
-                f"<div class=\"row\" style=\"align-items:center;\">"
-                f"<span class=\"pill\" style=\"background:{_pro_rating_color_v2(val)}\">{_f2(val)}</span>"
-                f"<span class=\"sub\">{lbl}</span></div>"
+                f'<div class="row" style="align-items:center;">'
+                f'<span class="pill" style="background:{_pro_rating_color_v2(val)}">{_f2(val)}</span>'
+                f'<span class="sub">{lbl}</span></div>'
             )
 
-        rank_num = f"#{i+1:02d}"
         card_html = (
-            "<div class=\"pro-wrap\">"
-            "<div class=\"pro-card\">"
-            "<div class=\"leftcol\">"
-            "<div class=\"pro-avatar\">"
-            f"<img src=\"{avatar_url}\" alt=\"{player}\" loading=\"lazy\" />"
-            "</div>"
-            f"<div class=\"row leftrow1\">{flag}<span class=\"chip\">{age_txt}</span></div>"
-            f"<div class=\"row leftrow-foot\"><span class=\"chip\">{mins_txt} &nbsp; {foot}</span></div>"
-            f"<div class=\"row leftrow-contract\"><span class=\"chip\">{contract_txt}</span></div>"
-            "</div>"
-            "<div>"
-            f"<div class=\"name\">{player}</div>"
-            f"{pills_html}"
-            f"<div class=\"row posrow\">{pos_html}</div>"
-            f"{teamline_html}"
-            "</div>"
-            f"<div class=\"rank\">{rank_num}</div>"
-            "</div>"
-            "</div>"
+            '<div class="pro-wrap">'
+            '<div class="pro-card">'
+            '<div class="leftcol">'
+            '<div class="pro-avatar">'
+            f'<img src="{avatar_url}" alt="{player}" loading="lazy" />'
+            '</div>'
+            f'<div class="row leftrow1">{flag}<span class="chip">{age_txt}</span></div>'
+            f'<div class="row leftrow-foot"><span class="chip">{mins_txt} &nbsp; {foot}</span></div>'
+            f'<div class="row leftrow-contract"><span class="chip">{contract_txt}</span></div>'
+            '</div>'
+            '<div>'
+            f'<div class="name">{player}</div>'
+            f'{pills_html}'
+            f'<div class="row posrow">{pos_html}</div>'
+            f'{teamline_html}'
+            '</div>'
+            f'<div class="rank">#{rank_i:02d}</div>'
+            '</div>'
+            '</div>'
         )
         st.markdown(card_html, unsafe_allow_html=True)
 
-        # ── Individual Metrics expander ──────────────────────────────────────
+        # ── Individual Metrics expander ───────────────────────────────────
         atts, defs, poss = _GROUP_METRICS.get(grp, (_ATT_METRICS, _DEF_METRICS, _POS_METRICS))
 
-        # Look up this player's row in df_ref for percentile data
         ref_mask = (df_ref["Player"] == player) & (df_ref["Team"] == team)
         ref_rows = df_ref[ref_mask]
         ref_row  = ref_rows.iloc[0] if not ref_rows.empty else row
 
         with st.expander("Individual Metrics", expanded=False):
-            s1 = _sec_html_v2("ATTACKING"    if grp != "GK" else "GOALKEEPING", atts, df_ref, ref_row)
-            s2 = _sec_html_v2("DEFENSIVE"    if grp != "GK" else "POSSESSION",  defs, df_ref, ref_row)
-            s3 = _sec_html_v2("POSSESSION",  poss, df_ref, ref_row) if poss else ""
+            s1 = _sec_html_v2("ATTACKING"   if grp != "GK" else "GOALKEEPING", atts, df_ref, ref_row)
+            s2 = _sec_html_v2("DEFENSIVE"   if grp != "GK" else "POSSESSION",  defs, df_ref, ref_row)
+            s3 = _sec_html_v2("POSSESSION", poss, df_ref, ref_row) if poss else ""
             sections = [s for s in [s1, s2, s3] if s]
             if sections:
                 st.markdown('<div class="metrics-grid">' + "".join(sections) + "</div>",
@@ -1328,39 +1294,6 @@ def render_pro_layout_v2(team_players_df: pd.DataFrame, df_sc, df_full: pd.DataF
                 st.caption("No percentile data available for this player.")
 
 
-# ── Badge loaders ─────────────────────────────────────────────────────────────
-_FOTMOB_URLS = {}
-for _badges_mod in ("badges", "team_fotmob_urls", "fotmob_urls"):
-    try:
-        _m = __import__(_badges_mod)
-        _FOTMOB_URLS = (
-            getattr(_m, "FOTMOB_TEAM_URLS", None)
-            or getattr(_m, "TEAM_URLS", None)
-            or getattr(_m, "BADGES", None)
-            or {}
-        )
-        break
-    except Exception:
-        pass
-
-_get_league_logo_url = lambda lg: ""
-for _logos_mod in ("leaguelogos", "league_logo_urls", "league_logos"):
-    try:
-        _m = __import__(_logos_mod)
-        if hasattr(_m, "get_league_logo_url"):
-            _get_league_logo_url = _m.get_league_logo_url
-        elif hasattr(_m, "LEAGUE_LOGO_URLS"):
-            import unicodedata as _ud
-            def _norm_key(s):
-                s = _ud.normalize("NFKD", str(s)).encode("ascii", "ignore").decode("ascii")
-                return " ".join(s.strip().lower().split())
-            _LL = {_norm_key(k): str(v).strip() for k, v in _m.LEAGUE_LOGO_URLS.items() if str(v).strip()}
-            _get_league_logo_url = lambda lg, _ll=_LL: _ll.get(_norm_key(lg), "")
-        break
-    except Exception:
-        pass
-
-@st.cache_data(show_spinner=False)
 def load_remote_img(url):
     try:
         r=requests.get(url,timeout=8); r.raise_for_status()

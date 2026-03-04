@@ -828,21 +828,30 @@ def _fotmob_squad_cached(team_id: str) -> list:
     if team_id in cache: return cache[team_id] or []
     squad = []
     try:
-        r = requests.get(f"https://www.fotmob.com/api/teams?id={team_id}",
-                         timeout=10, headers={"User-Agent":"Mozilla/5.0"})
+        url = f"https://www.fotmob.com/api/teams?id={team_id}"
+        r = requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
         if r.status_code == 200:
             data = r.json() or {}
-            raw = data.get("squad", None)
-            if isinstance(raw, list):
-                for sec in raw:
-                    for m in (sec.get("members") or sec.get("players") or []):
-                        if isinstance(m, dict): squad.append(m)
-            elif isinstance(raw, dict):
-                for k in ("members","players"):
-                    for m in (raw.get(k) or []):
-                        if isinstance(m, dict): squad.append(m)
+            raw_squad = data.get("squad", None)
+            if isinstance(raw_squad, list):
+                for section in raw_squad:
+                    members = section.get("members") or section.get("players") or []
+                    if isinstance(members, list):
+                        squad.extend([m for m in members if isinstance(m, dict)])
+            elif isinstance(raw_squad, dict):
+                for k in ("members", "players"):
+                    members = raw_squad.get(k)
+                    if isinstance(members, list):
+                        squad.extend([m for m in members if isinstance(m, dict)])
+                # nested squad.squad list
+                nested = raw_squad.get("squad")
+                if isinstance(nested, list):
+                    for section in nested:
+                        members = section.get("members") or section.get("players") or []
+                        if isinstance(members, list):
+                            squad.extend([m for m in members if isinstance(m, dict)])
     except Exception:
-        pass
+        squad = []
     cache[team_id] = squad
     return squad
 
@@ -852,37 +861,40 @@ def _get_fotmob_url(team: str) -> str:
 def resolve_player_photo(player, team, league, key_id, session_photo_map, global_overrides):
     if session_photo_map.get(key_id): return session_photo_map[key_id]
     if global_overrides.get(key_id): return global_overrides[key_id]
-    t_url = _get_fotmob_url(team)
-    m = re.search(r"/teams/(\d+)/", t_url or "")
-    if m:
-        squad = _fotmob_squad_cached(m.group(1))
-        tgt_sn = _slug_surname(player)
-        tgt_fn = _slug_name(player)
+    team_url = _get_fotmob_url(team)
+    tid_m = re.search(r"/teams/(\d+)/", team_url or "")
+    if tid_m:
+        squad = _fotmob_squad_cached(tid_m.group(1))
+        target_surname = _slug_name(_slug_surname(player))
+        target_full    = _slug_name(player)
         best_id = ""
-        if tgt_sn:
-            for mem in squad:
-                name = mem.get("name") or mem.get("playerName") or ""
-                pid  = str(mem.get("id") or mem.get("playerId") or "")
+        # 1) exact surname
+        if target_surname:
+            for m in squad:
+                name = m.get("name") or m.get("playerName") or ""
+                pid  = str(m.get("id") or m.get("playerId") or m.get("primaryId") or "")
                 if not pid: continue
-                if _slug_surname(name) == tgt_sn:
+                if _slug_name(_slug_surname(name)) == target_surname:
                     best_id = pid
-                    if tgt_fn and tgt_fn in _slug_name(name): break
-        if not best_id and tgt_fn:
-            for mem in squad:
-                name = mem.get("name") or mem.get("playerName") or ""
-                pid  = str(mem.get("id") or mem.get("playerId") or "")
-                if pid and tgt_fn in _slug_name(name):
+                    if target_full and target_full in _slug_name(name): break
+        # 2) full name contains
+        if not best_id and target_full:
+            for m in squad:
+                name = m.get("name") or m.get("playerName") or ""
+                pid  = str(m.get("id") or m.get("playerId") or m.get("primaryId") or "")
+                if pid and target_full in _slug_name(name):
                     best_id = pid; break
-        if not best_id and tgt_sn:
+        # 3) fuzzy surname fallback
+        if not best_id and target_surname:
             bsc, bpid = 0.0, ""
-            for mem in squad:
-                name = mem.get("name") or mem.get("playerName") or ""
-                pid  = str(mem.get("id") or mem.get("playerId") or "")
+            for m in squad:
+                name = m.get("name") or m.get("playerName") or ""
+                pid  = str(m.get("id") or m.get("playerId") or m.get("primaryId") or "")
                 if not pid: continue
-                sc = _SM(None, _slug_surname(name), tgt_sn).ratio()
+                sc = _SM(None, _slug_name(_slug_surname(name)), target_surname).ratio()
                 if sc > bsc: bsc, bpid = sc, pid
             if bsc >= 0.86: best_id = bpid
-        if best_id and best_id.isdigit():
+        if best_id and str(best_id).isdigit():
             url = f"https://images.fotmob.com/image_resources/playerimages/{best_id}.png"
             session_photo_map[key_id] = url
             return url
@@ -911,9 +923,9 @@ PRO_LAYOUT_GROUPS = [
 # Role pills per group  →  list of (score_col, display_label)
 _GROUP_ROLES = {
     "CF / ST": [
-        ("_rs_Goal Threat CF",  "Goal Threat"),
-        ("_rs_Link Up CF",      "Link-Up"),
-        ("_rs_Target Man CF",   "Target Man"),
+        ("_rs_Goal Threat CF",  "Goal Threat CF"),
+        ("_rs_Link Up CF",      "Link-Up CF"),
+        ("_rs_Target Man CF",   "Target Man CF"),
     ],
     "AM / W": [
         ("_rs_Goal Threat ATT", "Goal Threat"),
@@ -921,29 +933,29 @@ _GROUP_ROLES = {
         ("_rs_Ball Carrier ATT","Ball Carrier"),
     ],
     "CM": [
-        ("_rs_Defensive CM",          "Defensive"),
-        ("_rs_Advanced Playmaker CM", "Advanced Playmaker"),
-        ("_rs_Deep Playmaker CM",     "Deep Playmaker"),
+        ("_rs_Defensive CM",          "Defensive CM"),
+        ("_rs_Advanced Playmaker CM", "Advanced Playmaker CM"),
+        ("_rs_Deep Playmaker CM",     "Deep Playmaker CM"),
     ],
     "DM": [
-        ("_rs_Defensive CM",          "Defensive"),
-        ("_rs_Deep Playmaker CM",     "Deep Playmaker"),
-        ("_rs_Ball Carrying CM",      "Ball Carrying"),
+        ("_rs_Defensive CM",      "Defensive CM"),
+        ("_rs_Deep Playmaker CM", "Deep Playmaker CM"),
+        ("_rs_Ball Carrying CM",  "Ball Carrying CM"),
     ],
     "FB": [
-        ("_rs_Build Up FB",    "Build Up"),
-        ("_rs_Attacking FB",   "Attacking"),
-        ("_rs_Defensive FB",   "Defensive"),
+        ("_rs_Build Up FB",   "Build Up FB"),
+        ("_rs_Attacking FB",  "Attacking FB"),
+        ("_rs_Defensive FB",  "Defensive FB"),
     ],
     "CB": [
-        ("_rs_Ball Playing CB","Ball Playing"),
-        ("_rs_Wide CB",        "Wide CB"),
-        ("_rs_Box Defender",   "Box Defender"),
+        ("_rs_Ball Playing CB", "Ball Playing CB"),
+        ("_rs_Wide CB",         "Wide CB"),
+        ("_rs_Box Defender",    "Box Defender"),
     ],
     "GK": [
-        ("_rs_Shot Stopper GK","Shot Stopper"),
-        ("_rs_Ball Playing GK","Ball Playing GK"),
-        ("_rs_Sweeper GK",     "Sweeper GK"),
+        ("_rs_Shot Stopper GK", "Shot Stopper GK"),
+        ("_rs_Ball Playing GK", "Ball Playing GK"),
+        ("_rs_Sweeper GK",      "Sweeper GK"),
     ],
 }
 

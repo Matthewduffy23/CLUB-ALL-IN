@@ -1054,30 +1054,32 @@ _PRO_CSS = """
 .pro-wrap{ display:flex; justify-content:center; }
 .pro-card{
   position:relative; width:min(420px,96%);
-  display:grid; grid-template-columns:88px 1fr 48px;
+  display:grid; grid-template-columns:96px 1fr 48px;
   gap:12px; align-items:start;
   background:var(--card); border:1px solid rgba(255,255,255,.06);
-  border-radius:20px; padding:16px; margin-bottom:10px;
+  border-radius:20px; padding:16px; margin-bottom:12px;
   box-shadow:inset 0 1px 0 rgba(255,255,255,.03), 0 6px 24px rgba(0,0,0,.35);
 }
-.pro-avatar{ width:88px; height:88px; border-radius:12px; border:1px solid #2a3145; overflow:hidden; background:#0b0d12; }
-.pro-avatar img{ width:100%; height:100%; object-fit:cover; }
-.flagchip{ display:inline-flex; align-items:center; gap:4px; padding:0; }
-.flagchip img{ width:22px; height:15px; border-radius:2px; display:block; }
-.chip{ background:transparent; color:#a6a6a6; border:none; padding:0; font-size:14px; line-height:18px; opacity:.92; }
-.row{ display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin:1px 0; }
+.pro-avatar{ width:96px; height:96px; border-radius:12px; border:1px solid #2a3145; overflow:hidden; background:#0b0d12; }
+.pro-avatar img{ width:100%; height:100%; object-fit:cover; image-rendering:auto; transform:translateZ(0); }
+.flagchip{ display:inline-flex; align-items:center; gap:6px; background:transparent; border:none; padding:0; height:auto; }
+.flagchip img{ width:26px; height:18px; border-radius:2px; display:block; }
+.chip{ background:transparent; color:#a6a6a6; border:none; padding:0; border-radius:0; font-size:15px; line-height:18px; opacity:.92; }
+.row{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:2px 0; }
+.leftrow1{ margin-top:6px; } .leftrow-foot{ margin-top:2px; } .leftrow-contract{ margin-top:10px; }
 .pill{
-  min-width:34px; height:26px; padding:0 7px; border-radius:6px;
+  min-width:36px; height:28px; padding:0 8px; border-radius:6px;
   display:inline-flex; align-items:center; justify-content:center;
-  font-weight:800; font-size:17px; color:#0b0d12; box-sizing:border-box;
+  font-weight:800; font-size:18px; color:#0b0d12; box-sizing:border-box;
 }
-.name{ font-weight:800; font-size:20px; color:#e8ecff; margin-bottom:5px; line-height:1.15; }
-.sub{ color:#a8b3cf; font-size:14px; opacity:.9; }
-.postext{ font-weight:600; font-size:13.5px; margin-right:9px; }
-.rank{ position:absolute; top:10px; right:13px; color:#b7bfe1; font-weight:800; font-size:17px; pointer-events:none; }
-.teamline{ color:#dbe3ff; font-size:13px; font-weight:600; margin-top:5px; opacity:.95; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.tl-wrap{ position:relative; } .tl-has-crest{ padding-left:22px; }
-.crest-icon{ height:1.3em; width:auto; object-fit:contain; }
+.name{ font-weight:800; font-size:22px; color:#e8ecff; margin-bottom:6px; letter-spacing:.2px; line-height:1.15; }
+.sub{ color:#a8b3cf; font-size:15px; opacity:.9; }
+.posrow{ margin-top:13.5px; }
+.postext{ font-weight:600; font-size:14.5px; letter-spacing:.2px; margin-right:11px; }
+.rank{ position:absolute; top:10.5px; right:14px; color:#b7bfe1; font-weight:800; font-size:18px; text-align:right; pointer-events:none; }
+.teamline{ color:#dbe3ff; font-size:14px; font-weight:600; margin-top:6.5px; letter-spacing:.05px; opacity:.95; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.tl-wrap{ position:relative; } .tl-has-crest{ padding-left:24px; }
+.crest-icon{ height:1.35em; width:auto; object-fit:contain; image-rendering:auto; }
 .crest-abs{ position:absolute; left:0; top:50%; transform:translateY(-50%); pointer-events:none; }
 .grp-header{
   font-size:9px; font-weight:900; letter-spacing:.18em; color:#ef4444;
@@ -1228,19 +1230,18 @@ def render_pro_layout_v2(team_players_df: pd.DataFrame, df_sc):
             st.markdown(f"""
 <div class='pro-wrap'>
   <div class='pro-card'>
-    <div>
+    <div class='leftcol'>
       <div class='pro-avatar'>
-        <img src="{avatar_url}" alt="{player}" loading="lazy"/>
+        <img src="{avatar_url}" srcset="{avatar_url} 1x, {avatar_url} 2x" alt="{player}" loading="lazy" />
       </div>
-      <div class='row' style='margin-top:5px;'>{flag}<span class='chip'>{age_txt}</span></div>
-      <div class='row'><span class='chip'>{mins_txt}</span></div>
-      <div class='row'><span class='chip'>{foot}</span></div>
-      <div class='row'><span class='chip'>{contract_txt}</span></div>
+      <div class='row leftrow1'>{flag}<span class='chip'>{age_txt}</span></div>
+      <div class='row leftrow-foot'><span class='chip'>{mins_txt} &nbsp; {foot}</span></div>
+      <div class='row leftrow-contract'><span class='chip'>{contract_txt}</span></div>
     </div>
     <div>
       <div class='name'>{player}</div>
       {pills_html}
-      <div class='row' style='margin-top:10px;'>{pos_html}</div>
+      <div class='row posrow'>{pos_html}</div>
       {teamline_html}
     </div>
     <div class='rank'>#{i+1:02d}</div>

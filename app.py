@@ -1098,177 +1098,235 @@ _PRO_CSS = """
 </style>
 """
 
-def render_pro_layout_v2(team_players_df: pd.DataFrame, df_sc):
+def render_pro_layout_v2(team_players_df: pd.DataFrame, df_sc, df_full: pd.DataFrame = None):
     """
-    Interactive Streamlit pro layout.
-    Groups: attack → defence. Within each group: sorted by minutes played desc.
-    Role pills and metric expanders are position-group specific.
+    Pro layout for team squad.
+    - All players ordered by minutes played (no position-group headers)
+    - Percentiles computed per position-group × league from the full league CSV (df_full)
+    - Role pills are position-appropriate
+    - Photos loaded from FotMob, crests auto-resolved
     """
     st.markdown(_PRO_CSS, unsafe_allow_html=True)
-
-    # Shared photo/crest state
     st.session_state.setdefault("photo_map", {})
     st.session_state.setdefault("crest_map", {})
 
-    # Build a merged df: player data + any pre-computed score cols from df_sc
-    if df_sc is not None and not df_sc.empty:
-        score_cols = [c for c in df_sc.columns if c not in team_players_df.columns or c == "Player"]
-        df_merged = team_players_df.merge(
-            df_sc[score_cols], on="Player", how="left"
-        )
+    # ── Position-group key for a primary token ──────────────────────────────
+    _TOK_TO_GRP = {}
+    for grp_label, toks in PRO_LAYOUT_GROUPS:
+        for t in toks:
+            _TOK_TO_GRP[t] = grp_label
+
+    # ── Map each player's primary token to a group ──────────────────────────
+    def _player_grp(pos_str):
+        t = _tok(str(pos_str))
+        return _TOK_TO_GRP.get(t, "CM")   # fallback to CM if unknown
+
+    # ── PERCENTILE COMPUTATION (position-group × league) ────────────────────
+    # Use df_full (full CSV) so percentiles compare the player against
+    # everyone in the same position pool in the same league.
+    # Metric columns we need percentiles for:
+    ALL_METRIC_COLS = list({met for _, met in
+        _ATT_METRICS + _DEF_METRICS + _POS_METRICS + _GK_METRICS + _GK_POS_METRICS})
+
+    def _compute_percentiles(df_ref: pd.DataFrame) -> pd.DataFrame:
+        """
+        For each metric, rank within (league, position-group).
+        Returns df_ref with added '<metric> Percentile' columns.
+        """
+        df_ref = df_ref.copy()
+        df_ref["_grp"] = df_ref["Position"].apply(_player_grp)
+        for met in ALL_METRIC_COLS:
+            if met not in df_ref.columns:
+                continue
+            pct_col = f"{met} Percentile"
+            df_ref[met] = pd.to_numeric(df_ref[met], errors="coerce")
+            df_ref[pct_col] = np.nan
+            for (league, grp), idx in df_ref.groupby(["League", "_grp"]).groups.items():
+                pool = df_ref.loc[idx, met].dropna()
+                if pool.empty:
+                    continue
+                ranks = pool.rank(pct=True, method="average") * 100.0
+                df_ref.loc[ranks.index, pct_col] = ranks
+        return df_ref
+
+    # Build reference dataframe for percentiles
+    if df_full is not None and not df_full.empty:
+        df_ref = _compute_percentiles(df_full)
+    elif df_sc is not None and not df_sc.empty:
+        df_ref = _compute_percentiles(df_sc)
     else:
-        df_merged = team_players_df.copy()
+        df_ref = _compute_percentiles(team_players_df)
 
-    rendered_any = False
+    # ── Role scores: compute per player from percentiles ────────────────────
+    def _role_score(player_row, role_pairs):
+        """Weighted average of available percentiles for a role."""
+        total_w, wsum = 0.0, 0.0
+        for met, w in role_pairs.items():
+            pct_col = f"{met} Percentile"
+            if pct_col in df_ref.columns:
+                # look up this player in df_ref
+                mask = (df_ref["Player"] == player_row.get("Player","")) &                        (df_ref["Team"]   == player_row.get("Team",""))
+                hits = df_ref.loc[mask, pct_col].dropna()
+                if not hits.empty:
+                    wsum += float(hits.iloc[0]) * w
+                    total_w += w
+        return (wsum / total_w) if total_w > 0 else 0.0
 
-    for group_label, pos_toks in PRO_LAYOUT_GROUPS:
-        # filter to this position group by primary token
-        grp = df_merged[
-            df_merged["Position"].apply(lambda p: _tok(str(p)) in pos_toks)
-        ].copy()
-        if grp.empty:
-            continue
+    # ── Merge existing role score cols from df_sc ────────────────────────────
+    df_team = team_players_df.copy()
+    if df_sc is not None and not df_sc.empty:
+        score_cols = [c for c in df_sc.columns if c == "Player" or
+                      c not in df_team.columns]
+        df_team = df_team.merge(df_sc[score_cols], on="Player", how="left")
 
-        # sort by minutes played descending
-        mins_col = "Minutes played"
-        if mins_col in grp.columns:
-            grp = grp.sort_values(mins_col, ascending=False)
-        grp = grp.reset_index(drop=True)
+    # ── Sort all players by minutes played descending ────────────────────────
+    mins_col = "Minutes played"
+    if mins_col in df_team.columns:
+        df_team[mins_col] = pd.to_numeric(df_team[mins_col], errors="coerce")
+        df_team = df_team.sort_values(mins_col, ascending=False)
+    df_team = df_team.reset_index(drop=True)
 
-        # determine which role pills are available for this group
-        all_role_pairs = _GROUP_ROLES.get(group_label, [])
-        avail_roles = [(col, lbl) for col, lbl in all_role_pairs if col in df_merged.columns]
-
-        # group header
-        st.markdown(f"<div class=\"grp-header\">{group_label}</div>", unsafe_allow_html=True)
-        rendered_any = True
-
-        for i, row in grp.iterrows():
-            player  = str(row.get("Player", "")) or ""
-            team    = str(row.get("Team", "")) or ""
-            league  = str(row.get("League", "")) or ""
-            pos     = str(row.get("Position", "")) or ""
-
-            try:
-                age_val = int(float(row.get("Age") or 0)) if not pd.isna(row.get("Age", np.nan)) else 0
-            except Exception:
-                age_val = 0
-            age_txt = f"{age_val}y.o." if age_val > 0 else "—"
-
-            # minutes
-            try:
-                mins = int(float(row.get(mins_col) or 0))
-            except Exception:
-                mins = 0
-            mins_txt = f"{mins}′"
-
-            # contract
-            yrs  = contract_years(row.get("Contract expires", ""))
-            loan = is_loan(row)
-            lo   = is_loaned_out(row)
-            yt   = is_youth(row)
-            cy   = pd.to_datetime(row.get("Contract expires"), errors="coerce")
-            cyr  = int(cy.year) if pd.notna(cy) else 0
-            contract_txt = f"{cyr}" if cyr > 0 else "—"
-
-            # birth country flag
-            birth = row.get("Birth country", "") if "Birth country" in row.index else ""
-            flag  = _flag_html(str(birth) if birth else "")
-
-            # foot
-            foot = _get_foot(row) or "—"
-
-            # position chips
-            raw_pos = (pos or "").strip().upper()
-            codes = [c for c in re.split(r"[,\s/;]+", raw_pos) if c]
-            seen, ordered = set(), []
-            for c in codes:
-                if c not in seen:
-                    seen.add(c); ordered.append(c)
-            pos_html = "".join(
-                f"<span class=\"postext\" style=\"color:{_pro_chip_color(c)}\">{c}</span>"
-                for c in ordered
-            )
-
-            # avatar
-            key_id = f"{_norm(player)}|{_norm(team)}"
-            avatar_url = resolve_player_photo(
-                player=player, team=team, league=league,
-                key_id=key_id,
-                session_photo_map=st.session_state["photo_map"],
-                global_overrides={},
-            )
-
-            # crest
-            crest_store_key = f"{_norm(team)}|{_norm(league)}"
-            crest_url = st.session_state["crest_map"].get(crest_store_key, "")
-            if not crest_url:
-                t_url = _get_fotmob_url(team)
-                if t_url:
-                    tid = re.search(r"/teams/(\d+)/", t_url)
-                    crest_url = f"https://images.fotmob.com/image_resources/logo/teamlogo/{tid.group(1)}.png" if tid else ""
-
-            if crest_url:
-                teamline_html = (
-                    "<div class=\"teamline tl-wrap tl-has-crest\">"
-                    f"<img class=\"crest-icon crest-abs\" src=\"{crest_url}\" alt=\"\">"
-                    f"<span>{team} · {league}</span></div>"
-                )
-            else:
-                teamline_html = f"<div class=\"teamline\">{team} · {league}</div>"
-
-            # role pills (up to 3 from avail_roles)
-            pills_html = ""
-            for col, lbl in avail_roles[:3]:
-                val = _show99(row.get(col, 0))
-                pills_html += (
-                    f"<div class=\"row\" style=\"align-items:center;\">"
-                    f"<span class=\"pill\" style=\"background:{_pro_rating_color_v2(val)}\">{_f2(val)}</span>"
-                    f"<span class=\"sub\">{lbl}</span></div>"
-                )
-
-            rank_num = f"#{i+1:02d}"
-            card_html = (
-                "<div class=\"pro-wrap\">"
-                "<div class=\"pro-card\">"
-                "<div class=\"leftcol\">"
-                "<div class=\"pro-avatar\">"
-                f"<img src=\"{avatar_url}\" alt=\"{player}\" loading=\"lazy\" />"
-                "</div>"
-                f"<div class=\"row leftrow1\">{flag}<span class=\"chip\">{age_txt}</span></div>"
-                f"<div class=\"row leftrow-foot\"><span class=\"chip\">{mins_txt} &nbsp; {foot}</span></div>"
-                f"<div class=\"row leftrow-contract\"><span class=\"chip\">{contract_txt}</span></div>"
-                "</div>"
-                "<div>"
-                f"<div class=\"name\">{player}</div>"
-                f"{pills_html}"
-                f"<div class=\"row posrow\">{pos_html}</div>"
-                f"{teamline_html}"
-                "</div>"
-                f"<div class=\"rank\">{rank_num}</div>"
-                "</div>"
-                "</div>"
-            )
-            st.markdown(card_html, unsafe_allow_html=True)
-
-            # Individual Metrics expander
-            atts, defs, poss = _GROUP_METRICS.get(group_label, (_ATT_METRICS, _DEF_METRICS, _POS_METRICS))
-            with st.expander("Individual Metrics", expanded=False):
-                sections = []
-                s1 = _sec_html_v2("ATTACKING" if group_label != "GK" else "GOALKEEPING", atts, df_merged, row)
-                s2 = _sec_html_v2("DEFENSIVE" if group_label != "GK" else "POSSESSION", defs, df_merged, row)
-                s3 = _sec_html_v2("POSSESSION", poss, df_merged, row) if poss else ""
-                sections = [s for s in [s1, s2, s3] if s]
-                if sections:
-                    st.markdown(
-                        '<div class="metrics-grid">' + ''.join(sections) + '</div>',
-                        unsafe_allow_html=True
-                    )
-                else:
-                    st.caption("No percentile data available for this player.")
-
-    if not rendered_any:
+    if df_team.empty:
         st.info("No players found for this team.")
+        return
+
+    for i, row in df_team.iterrows():
+        player  = str(row.get("Player", "")) or ""
+        team    = str(row.get("Team", ""))   or ""
+        league  = str(row.get("League", "")) or ""
+        pos     = str(row.get("Position", "")) or ""
+        grp     = _player_grp(pos)
+
+        try:
+            mins = int(float(row.get(mins_col) or 0))
+        except Exception:
+            mins = 0
+        mins_txt = f"{mins}\u2032"
+
+        try:
+            age_val = int(float(row.get("Age") or 0)) if not pd.isna(row.get("Age", np.nan)) else 0
+        except Exception:
+            age_val = 0
+        age_txt = f"{age_val}y.o." if age_val > 0 else "\u2014"
+
+        cy  = pd.to_datetime(row.get("Contract expires"), errors="coerce")
+        cyr = int(cy.year) if pd.notna(cy) else 0
+        contract_txt = str(cyr) if cyr > 0 else "\u2014"
+
+        birth = str(row.get("Birth country", "") or "")
+        foot  = _get_foot(row) or "\u2014"
+        flag  = _flag_html(birth)
+
+        # pos chips
+        raw_pos = pos.strip().upper()
+        codes   = [c for c in re.split(r"[,\s/;]+", raw_pos) if c]
+        seen, ordered = set(), []
+        for c in codes:
+            if c not in seen:
+                seen.add(c); ordered.append(c)
+        pos_html = "".join(
+            f"<span class=\"postext\" style=\"color:{_pro_chip_color(c)}\">{c}</span>"
+            for c in ordered
+        )
+
+        # avatar
+        key_id = f"{_norm(player)}|{_norm(team)}"
+        avatar_url = resolve_player_photo(
+            player=player, team=team, league=league,
+            key_id=key_id,
+            session_photo_map=st.session_state["photo_map"],
+            global_overrides={},
+        )
+
+        # crest
+        crest_store_key = f"{_norm(team)}|{_norm(league)}"
+        crest_url = st.session_state["crest_map"].get(crest_store_key, "")
+        if not crest_url:
+            t_url = _get_fotmob_url(team)
+            if t_url:
+                tid = re.search(r"/teams/(\d+)/", t_url)
+                crest_url = f"https://images.fotmob.com/image_resources/logo/teamlogo/{tid.group(1)}.png" if tid else ""
+
+        if crest_url:
+            teamline_html = (
+                "<div class=\"teamline tl-wrap tl-has-crest\">"
+                f"<img class=\"crest-icon crest-abs\" src=\"{crest_url}\" alt=\"\">"
+                f"<span>{team} \u00b7 {league}</span></div>"
+            )
+        else:
+            teamline_html = f"<div class=\"teamline\">{team} \u00b7 {league}</div>"
+
+        # ── role pills: use position-group-appropriate roles ─────────────────
+        all_role_pairs = _GROUP_ROLES.get(grp, [])
+        # Use pre-computed score cols if available, else compute on the fly
+        pills_html = ""
+        for col, lbl in all_role_pairs[:3]:
+            if col in row.index and pd.notna(row.get(col)):
+                val = _show99(row[col])
+            else:
+                # compute from ROLE_BUCKETS
+                rk = ROLE_KEY_MAP.get(_tok(pos), "ATT")
+                bucket_roles = ROLE_BUCKETS.get(rk, {})
+                # find matching bucket by name similarity
+                matched_metrics = {}
+                for rn, spec in bucket_roles.items():
+                    if any(w in lbl for w in rn.split()):
+                        matched_metrics = spec.get("metrics", {})
+                        break
+                if not matched_metrics:
+                    # just take first matching col name
+                    for rn, spec in bucket_roles.items():
+                        matched_metrics = spec.get("metrics", {}); break
+                val = _show99(_role_score(row, matched_metrics))
+            pills_html += (
+                f"<div class=\"row\" style=\"align-items:center;\">"
+                f"<span class=\"pill\" style=\"background:{_pro_rating_color_v2(val)}\">{_f2(val)}</span>"
+                f"<span class=\"sub\">{lbl}</span></div>"
+            )
+
+        rank_num = f"#{i+1:02d}"
+        card_html = (
+            "<div class=\"pro-wrap\">"
+            "<div class=\"pro-card\">"
+            "<div class=\"leftcol\">"
+            "<div class=\"pro-avatar\">"
+            f"<img src=\"{avatar_url}\" alt=\"{player}\" loading=\"lazy\" />"
+            "</div>"
+            f"<div class=\"row leftrow1\">{flag}<span class=\"chip\">{age_txt}</span></div>"
+            f"<div class=\"row leftrow-foot\"><span class=\"chip\">{mins_txt} &nbsp; {foot}</span></div>"
+            f"<div class=\"row leftrow-contract\"><span class=\"chip\">{contract_txt}</span></div>"
+            "</div>"
+            "<div>"
+            f"<div class=\"name\">{player}</div>"
+            f"{pills_html}"
+            f"<div class=\"row posrow\">{pos_html}</div>"
+            f"{teamline_html}"
+            "</div>"
+            f"<div class=\"rank\">{rank_num}</div>"
+            "</div>"
+            "</div>"
+        )
+        st.markdown(card_html, unsafe_allow_html=True)
+
+        # ── Individual Metrics expander ──────────────────────────────────────
+        atts, defs, poss = _GROUP_METRICS.get(grp, (_ATT_METRICS, _DEF_METRICS, _POS_METRICS))
+
+        # Look up this player's row in df_ref for percentile data
+        ref_mask = (df_ref["Player"] == player) & (df_ref["Team"] == team)
+        ref_rows = df_ref[ref_mask]
+        ref_row  = ref_rows.iloc[0] if not ref_rows.empty else row
+
+        with st.expander("Individual Metrics", expanded=False):
+            s1 = _sec_html_v2("ATTACKING"    if grp != "GK" else "GOALKEEPING", atts, df_ref, ref_row)
+            s2 = _sec_html_v2("DEFENSIVE"    if grp != "GK" else "POSSESSION",  defs, df_ref, ref_row)
+            s3 = _sec_html_v2("POSSESSION",  poss, df_ref, ref_row) if poss else ""
+            sections = [s for s in [s1, s2, s3] if s]
+            if sections:
+                st.markdown('<div class="metrics-grid">' + "".join(sections) + "</div>",
+                            unsafe_allow_html=True)
+            else:
+                st.caption("No percentile data available for this player.")
+
 
 # ── Badge loaders ─────────────────────────────────────────────────────────────
 _FOTMOB_URLS = {}
@@ -1947,7 +2005,7 @@ else:
     else:
         sq_min_mins = st.session_state.get("sq_minmins_val", 0)
         _pro_filt = _pro_players[_pro_players["Minutes played"] >= sq_min_mins].copy()
-        render_pro_layout_v2(_pro_filt, df_players_sc)
+        render_pro_layout_v2(_pro_filt, df_players_sc, df_full=df_players)
 
 st.markdown("---")
 st.caption("TEAM HQ + SQUAD · Wyscout data · Percentile ranks computed within league pool")

@@ -750,18 +750,18 @@ def _cc_to_twemoji(cc):
     return f"{0x1F1E6+(ord(a)-65):04x}-{0x1F1E6+(ord(b)-65):04x}"
 
 def _flag_html(country_name: str) -> str:
-    if not country_name: return "<span class='chip'>—</span>"
+    if not country_name: return "<span class=\"chip\">—</span>"
     n = _norm(country_name)
     cc = _COUNTRY_TO_CC.get(n, "")
-    if not cc: return "<span class='chip'>—</span>"
+    if not cc: return "<span class=\"chip\">—</span>"
     if cc in _TWEMOJI_SPECIAL:
         src = f"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/{_TWEMOJI_SPECIAL[cc]}.svg"
-        return f"<span class='flagchip'><img src='{src}' alt='{country_name}'></span>"
+        return f"<span class=\"flagchip\"><img src=\"{src}\" alt=\"{country_name}\"></span>"
     code = _cc_to_twemoji(cc)
     if code:
         src = f"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/{code}.svg"
-        return f"<span class='flagchip'><img src='{src}' alt='{country_name}'></span>"
-    return f"<span class='chip'>{cc.upper()}</span>"
+        return f"<span class=\"flagchip\"><img src=\"{src}\" alt=\"{country_name}\"></span>"
+    return f"<span class=\"chip\">{cc.upper()}</span>"
 
 def _get_foot(row) -> str:
     for col in ("Foot", "Preferred foot", "Preferred Foot"):
@@ -1036,16 +1036,16 @@ def _sec_html_v2(title, pairs, df_view, row):
         rawv = _metric_val_v2(row, met)
         rtxt = "—" if np.isnan(rawv) else f"{rawv:.2f}".rstrip("0").rstrip(".")
         rows.append(
-            "<div class='m-row'>"
-            f"<div class='m-label'>{lab}</div>"
-            "<div class='m-right'>"
-            f"<div class='m-val'>{rtxt}</div>"
-            f"<div class='m-badge' style='background:{_pro_rating_color_v2(p)}'>{_f2(p)}</div>"
+            "<div class=\"m-row\">"
+            f"<div class=\"m-label\">{lab}</div>"
+            "<div class=\"m-right\">"
+            f"<div class=\"m-val\">{rtxt}</div>"
+            f"<div class=\"m-badge\" style=\"background:{_pro_rating_color_v2(p)}\">{_f2(p)}</div>"
             "</div></div>"
         )
     if not rows:
         return ""
-    return f"<div class='m-sec'><div class='m-title'>{title}</div>{''.join(rows)}</div>"
+    return f"<div class=\"m-sec\"><div class=\"m-title\">{title}</div>{''.join(rows)}</div>"
 
 
 _PRO_CSS = """
@@ -1140,7 +1140,7 @@ def render_pro_layout_v2(team_players_df: pd.DataFrame, df_sc):
         avail_roles = [(col, lbl) for col, lbl in all_role_pairs if col in df_merged.columns]
 
         # group header
-        st.markdown(f"<div class='grp-header'>{group_label}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class=\"grp-header\">{group_label}</div>", unsafe_allow_html=True)
         rendered_any = True
 
         for i, row in grp.iterrows():
@@ -1186,7 +1186,7 @@ def render_pro_layout_v2(team_players_df: pd.DataFrame, df_sc):
                 if c not in seen:
                     seen.add(c); ordered.append(c)
             pos_html = "".join(
-                f"<span class='postext' style='color:{_pro_chip_color(c)}'>{c}</span>"
+                f"<span class=\"postext\" style=\"color:{_pro_chip_color(c)}\">{c}</span>"
                 for c in ordered
             )
 
@@ -1210,44 +1210,46 @@ def render_pro_layout_v2(team_players_df: pd.DataFrame, df_sc):
 
             if crest_url:
                 teamline_html = (
-                    f"<div class='teamline tl-wrap tl-has-crest'>"
-                    f"<img class='crest-icon crest-abs' src='{crest_url}' alt=''>"
+                    "<div class=\"teamline tl-wrap tl-has-crest\">"
+                    f"<img class=\"crest-icon crest-abs\" src=\"{crest_url}\" alt=\"\">"
                     f"<span>{team} · {league}</span></div>"
                 )
             else:
-                teamline_html = f"<div class='teamline'>{team} · {league}</div>"
+                teamline_html = f"<div class=\"teamline\">{team} · {league}</div>"
 
             # role pills (up to 3 from avail_roles)
             pills_html = ""
             for col, lbl in avail_roles[:3]:
                 val = _show99(row.get(col, 0))
                 pills_html += (
-                    f"<div class='row' style='align-items:center;'>"
-                    f"<span class='pill' style='background:{_pro_rating_color_v2(val)}'>{_f2(val)}</span>"
-                    f"<span class='sub'>{lbl}</span></div>"
+                    f"<div class=\"row\" style=\"align-items:center;\">"
+                    f"<span class=\"pill\" style=\"background:{_pro_rating_color_v2(val)}\">{_f2(val)}</span>"
+                    f"<span class=\"sub\">{lbl}</span></div>"
                 )
 
-            st.markdown(f"""
-<div class='pro-wrap'>
-  <div class='pro-card'>
-    <div class='leftcol'>
-      <div class='pro-avatar'>
-        <img src="{avatar_url}" srcset="{avatar_url} 1x, {avatar_url} 2x" alt="{player}" loading="lazy" />
-      </div>
-      <div class='row leftrow1'>{flag}<span class='chip'>{age_txt}</span></div>
-      <div class='row leftrow-foot'><span class='chip'>{mins_txt} &nbsp; {foot}</span></div>
-      <div class='row leftrow-contract'><span class='chip'>{contract_txt}</span></div>
-    </div>
-    <div>
-      <div class='name'>{player}</div>
-      {pills_html}
-      <div class='row posrow'>{pos_html}</div>
-      {teamline_html}
-    </div>
-    <div class='rank'>#{i+1:02d}</div>
-  </div>
-</div>
-""", unsafe_allow_html=True)
+            rank_num = f"#{i+1:02d}"
+            card_html = (
+                "<div class=\"pro-wrap\">"
+                "<div class=\"pro-card\">"
+                "<div class=\"leftcol\">"
+                "<div class=\"pro-avatar\">"
+                f"<img src=\"{avatar_url}\" alt=\"{player}\" loading=\"lazy\" />"
+                "</div>"
+                f"<div class=\"row leftrow1\">{flag}<span class=\"chip\">{age_txt}</span></div>"
+                f"<div class=\"row leftrow-foot\"><span class=\"chip\">{mins_txt} &nbsp; {foot}</span></div>"
+                f"<div class=\"row leftrow-contract\"><span class=\"chip\">{contract_txt}</span></div>"
+                "</div>"
+                "<div>"
+                f"<div class=\"name\">{player}</div>"
+                f"{pills_html}"
+                f"<div class=\"row posrow\">{pos_html}</div>"
+                f"{teamline_html}"
+                "</div>"
+                f"<div class=\"rank\">{rank_num}</div>"
+                "</div>"
+                "</div>"
+            )
+            st.markdown(card_html, unsafe_allow_html=True)
 
             # Individual Metrics expander
             atts, defs, poss = _GROUP_METRICS.get(group_label, (_ATT_METRICS, _DEF_METRICS, _POS_METRICS))
@@ -1259,7 +1261,7 @@ def render_pro_layout_v2(team_players_df: pd.DataFrame, df_sc):
                 sections = [s for s in [s1, s2, s3] if s]
                 if sections:
                     st.markdown(
-                        "<div class='metrics-grid'>" + "".join(sections) + "</div>",
+                        '<div class="metrics-grid">' + ''.join(sections) + '</div>',
                         unsafe_allow_html=True
                     )
                 else:

@@ -1554,6 +1554,59 @@ PRO_LAYOUT_GROUPS = [
     ("GK",       ["GK"]),
 ]
 
+# ── All 5 CM/DM roles — top 3 shown dynamically by score ─────────────────────
+_CM_ALL_ROLES = {
+    "Deep Playmaker": {
+        "col": "_rs_pro_deep_playmaker",
+        "metrics": {
+            "Passes per 90": 1,
+            "Accurate passes, %": 1,
+            "Forward passes per 90": 2,
+            "Accurate forward passes, %": 1.5,
+            "Progressive passes per 90": 3,
+            "Passes to final third per 90": 2.5,
+            "Accurate long passes, %": 1,
+        }
+    },
+    "Advanced Playmaker": {
+        "col": "_rs_pro_adv_playmaker",
+        "metrics": {
+            "Deep completions per 90": 1.5,
+            "Smart passes per 90": 2,
+            "xA per 90": 4,
+            "Passes to penalty area per 90": 2,
+        }
+    },
+    "Defensive Midfielder": {
+        "col": "_rs_pro_def_mid",
+        "metrics": {
+            "Defensive duels per 90": 4,
+            "Defensive duels won, %": 4,
+            "PAdj Interceptions": 3,
+            "Aerial duels per 90": 0.5,
+            "Aerial duels won, %": 1,
+        }
+    },
+    "Goal Threat CM": {
+        "col": "_rs_pro_goal_threat_cm",
+        "metrics": {
+            "Non-penalty goals per 90": 3,
+            "xG per 90": 3,
+            "Shots per 90": 1.5,
+            "Touches in box per 90": 2,
+        }
+    },
+    "Ball-Carrying CM": {
+        "col": "_rs_pro_ball_carry_cm",
+        "metrics": {
+            "Dribbles per 90": 4,
+            "Successful dribbles, %": 2,
+            "Progressive runs per 90": 3,
+            "Accelerations per 90": 3,
+        }
+    },
+}
+
 _GROUP_ROLES = {
     "CF / ST": [
         ("_rs_Goal Threat CF",  "Goal Threat CF"),
@@ -1565,16 +1618,9 @@ _GROUP_ROLES = {
         ("_rs_Playmaker ATT",   "Playmaker"),
         ("_rs_Ball Carrier ATT","Ball Carrier"),
     ],
-    "CM": [
-        ("_rs_Defensive CM",          "Defensive CM"),
-        ("_rs_Advanced Playmaker CM", "Advanced Playmaker CM"),
-        ("_rs_Deep Playmaker CM",     "Deep Playmaker CM"),
-    ],
-    "DM": [
-        ("_rs_Defensive CM",      "Defensive CM"),
-        ("_rs_Deep Playmaker CM", "Deep Playmaker CM"),
-        ("_rs_Ball Carrying CM",  "Ball Carrying CM"),
-    ],
+    # CM & DM: use _CM_ALL_ROLES, top 3 picked dynamically
+    "CM":  None,
+    "DM":  None,
     "FB": [
         ("_rs_Build Up FB",   "Build Up FB"),
         ("_rs_Attacking FB",  "Attacking FB"),
@@ -1592,69 +1638,164 @@ _GROUP_ROLES = {
     ],
 }
 
-_ATT_METRICS = [
-    ("Crosses",               "Crosses per 90"),
-    ("Crossing Acc %",        "Accurate crosses, %"),
-    ("Goals (NP)",            "Non-penalty goals per 90"),
-    ("xG",                    "xG per 90"),
-    ("Conversion %",          "Goal conversion, %"),
-    ("xA",                    "xA per 90"),
-    ("Progressive Runs",      "Progressive runs per 90"),
-    ("Shots",                 "Shots per 90"),
-    ("Shot Acc %",            "Shots on target, %"),
-    ("Box Touches",           "Touches in box per 90"),
+# ── Position-specific metrics ─────────────────────────────────────────────────
+_CF_ATT_METRICS = [
+    ("Goals (NP)",        "Non-penalty goals per 90"),
+    ("xG",                "xG per 90"),
+    ("Conversion %",      "Goal conversion, %"),
+    ("Shots",             "Shots per 90"),
+    ("Shot Acc %",        "Shots on target, %"),
+    ("Box Touches",       "Touches in box per 90"),
+    ("xA",                "xA per 90"),
 ]
-_DEF_METRICS = [
-    ("Aerial Duels",          "Aerial duels per 90"),
-    ("Aerial %",              "Aerial duels won, %"),
-    ("Def. Duels",            "Defensive duels per 90"),
-    ("Def. Duel %",           "Defensive duels won, %"),
-    ("PAdj Interceptions",    "PAdj Interceptions"),
-    ("Shots Blocked",         "Shots blocked per 90"),
+_CF_DEF_METRICS = [
+    ("Aerial Duels",      "Aerial duels per 90"),
+    ("Aerial %",          "Aerial duels won, %"),
+    ("Def. Duels",        "Defensive duels per 90"),
+    ("Def. Duel %",       "Defensive duels won, %"),
 ]
-_POS_METRICS = [
-    ("Accelerations",         "Accelerations per 90"),
-    ("Deep Completions",      "Deep completions per 90"),
-    ("Dribbles",              "Dribbles per 90"),
-    ("Dribble %",             "Successful dribbles, %"),
-    ("Fwd Passes",            "Forward passes per 90"),
-    ("Fwd Pass %",            "Accurate forward passes, %"),
-    ("Long Passes",           "Long passes per 90"),
-    ("Long Pass %",           "Accurate long passes, %"),
-    ("Key Passes",            "Key passes per 90"),
-    ("Passes",                "Passes per 90"),
-    ("Pass %",                "Accurate passes, %"),
-    ("Passes to F3rd",        "Passes to final third per 90"),
-    ("Passes to F3rd %",      "Accurate passes to final third, %"),
-    ("Passes to Box",         "Passes to penalty area per 90"),
-    ("Passes to Box %",       "Accurate passes to penalty area, %"),
-    ("Prog. Passes",          "Progressive passes per 90"),
-    ("Prog. Pass %",          "Accurate progressive passes, %"),
-    ("Smart Passes",          "Smart passes per 90"),
+_CF_POS_METRICS = [
+    ("Dribbles",          "Dribbles per 90"),
+    ("Dribble %",         "Successful dribbles, %"),
+    ("Progressive Runs",  "Progressive runs per 90"),
+    ("Key Passes",        "Key passes per 90"),
+    ("Smart Passes",      "Smart passes per 90"),
+    ("Passes to Box",     "Passes to penalty area per 90"),
+    ("Deep Completions",  "Deep completions per 90"),
 ]
+
+_AMW_ATT_METRICS = [
+    ("Goals (NP)",        "Non-penalty goals per 90"),
+    ("xG",                "xG per 90"),
+    ("xA",                "xA per 90"),
+    ("Shots",             "Shots per 90"),
+    ("Shot Acc %",        "Shots on target, %"),
+    ("Box Touches",       "Touches in box per 90"),
+    ("Crosses",           "Crosses per 90"),
+    ("Crossing Acc %",    "Accurate crosses, %"),
+]
+_AMW_DEF_METRICS = [
+    ("Def. Duels",        "Defensive duels per 90"),
+    ("Def. Duel %",       "Defensive duels won, %"),
+    ("PAdj Interceptions","PAdj Interceptions"),
+]
+_AMW_POS_METRICS = [
+    ("Dribbles",          "Dribbles per 90"),
+    ("Dribble %",         "Successful dribbles, %"),
+    ("Progressive Runs",  "Progressive runs per 90"),
+    ("Accelerations",     "Accelerations per 90"),
+    ("Key Passes",        "Key passes per 90"),
+    ("Smart Passes",      "Smart passes per 90"),
+    ("Deep Completions",  "Deep completions per 90"),
+    ("Passes to Box",     "Passes to penalty area per 90"),
+    ("Prog. Passes",      "Progressive passes per 90"),
+]
+
+_CM_ATT_METRICS = [
+    ("Goals (NP)",        "Non-penalty goals per 90"),
+    ("xG",                "xG per 90"),
+    ("xA",                "xA per 90"),
+    ("Key Passes",        "Key passes per 90"),
+    ("Smart Passes",      "Smart passes per 90"),
+    ("Deep Completions",  "Deep completions per 90"),
+    ("Passes to Box",     "Passes to penalty area per 90"),
+    ("Box Touches",       "Touches in box per 90"),
+]
+_CM_DEF_METRICS = [
+    ("Def. Duels",        "Defensive duels per 90"),
+    ("Def. Duel %",       "Defensive duels won, %"),
+    ("PAdj Interceptions","PAdj Interceptions"),
+    ("Aerial Duels",      "Aerial duels per 90"),
+    ("Aerial %",          "Aerial duels won, %"),
+]
+_CM_POS_METRICS = [
+    ("Passes",            "Passes per 90"),
+    ("Pass %",            "Accurate passes, %"),
+    ("Fwd Passes",        "Forward passes per 90"),
+    ("Fwd Pass %",        "Accurate forward passes, %"),
+    ("Prog. Passes",      "Progressive passes per 90"),
+    ("Passes to F3rd",    "Passes to final third per 90"),
+    ("Long Pass %",       "Accurate long passes, %"),
+    ("Dribbles",          "Dribbles per 90"),
+    ("Progressive Runs",  "Progressive runs per 90"),
+    ("Accelerations",     "Accelerations per 90"),
+]
+
+_FB_ATT_METRICS = [
+    ("Crosses",           "Crosses per 90"),
+    ("Crossing Acc %",    "Accurate crosses, %"),
+    ("xA",                "xA per 90"),
+    ("Box Touches",       "Touches in box per 90"),
+    ("Passes to Box",     "Passes to penalty area per 90"),
+]
+_FB_DEF_METRICS = [
+    ("Def. Duels",        "Defensive duels per 90"),
+    ("Def. Duel %",       "Defensive duels won, %"),
+    ("PAdj Interceptions","PAdj Interceptions"),
+    ("Aerial Duels",      "Aerial duels per 90"),
+    ("Aerial %",          "Aerial duels won, %"),
+    ("Shots Blocked",     "Shots blocked per 90"),
+]
+_FB_POS_METRICS = [
+    ("Dribbles",          "Dribbles per 90"),
+    ("Dribble %",         "Successful dribbles, %"),
+    ("Progressive Runs",  "Progressive runs per 90"),
+    ("Accelerations",     "Accelerations per 90"),
+    ("Prog. Passes",      "Progressive passes per 90"),
+    ("Fwd Passes",        "Forward passes per 90"),
+    ("Passes to F3rd",    "Passes to final third per 90"),
+]
+
+_CB_ATT_METRICS = [
+    ("xA",                "xA per 90"),
+    ("Smart Passes",      "Smart passes per 90"),
+    ("Key Passes",        "Key passes per 90"),
+    ("Passes to Box",     "Passes to penalty area per 90"),
+]
+_CB_DEF_METRICS = [
+    ("Def. Duels",        "Defensive duels per 90"),
+    ("Def. Duel %",       "Defensive duels won, %"),
+    ("PAdj Interceptions","PAdj Interceptions"),
+    ("Aerial Duels",      "Aerial duels per 90"),
+    ("Aerial %",          "Aerial duels won, %"),
+    ("Shots Blocked",     "Shots blocked per 90"),
+]
+_CB_POS_METRICS = [
+    ("Passes",            "Passes per 90"),
+    ("Pass %",            "Accurate passes, %"),
+    ("Fwd Passes",        "Forward passes per 90"),
+    ("Fwd Pass %",        "Accurate forward passes, %"),
+    ("Prog. Passes",      "Progressive passes per 90"),
+    ("Passes to F3rd",    "Passes to final third per 90"),
+    ("Long Passes",       "Long passes per 90"),
+    ("Long Pass %",       "Accurate long passes, %"),
+    ("Progressive Runs",  "Progressive runs per 90"),
+    ("Dribbles",          "Dribbles per 90"),
+]
+
 _GK_METRICS = [
-    ("Exits",                 "Exits per 90"),
-    ("Goals Prevented",       "Prevented goals per 90"),
-    ("Goals Conceded",        "Conceded goals per 90"),
-    ("Save Rate %",           "Save rate, %"),
-    ("Shots Against",         "Shots against per 90"),
-    ("xG Against",            "xG against per 90"),
+    ("Exits",             "Exits per 90"),
+    ("Goals Prevented",   "Prevented goals per 90"),
+    ("Goals Conceded",    "Conceded goals per 90"),
+    ("Save Rate %",       "Save rate, %"),
+    ("Shots Against",     "Shots against per 90"),
+    ("xG Against",        "xG against per 90"),
 ]
 _GK_POS_METRICS = [
-    ("Long Passes",           "Long passes per 90"),
-    ("Long Pass %",           "Accurate long passes, %"),
-    ("Passes",                "Passes per 90"),
-    ("Pass %",                "Accurate passes, %"),
+    ("Long Passes",       "Long passes per 90"),
+    ("Long Pass %",       "Accurate long passes, %"),
+    ("Passes",            "Passes per 90"),
+    ("Pass %",            "Accurate passes, %"),
 ]
 
 _GROUP_METRICS = {
-    "CF / ST": (_ATT_METRICS,   _DEF_METRICS,   _POS_METRICS),
-    "AM / W":  (_ATT_METRICS,   _DEF_METRICS,   _POS_METRICS),
-    "CM":      (_ATT_METRICS,   _DEF_METRICS,   _POS_METRICS),
-    "DM":      (_ATT_METRICS,   _DEF_METRICS,   _POS_METRICS),
-    "FB":      (_ATT_METRICS,   _DEF_METRICS,   _POS_METRICS),
-    "CB":      (_ATT_METRICS,   _DEF_METRICS,   _POS_METRICS),
-    "GK":      (_GK_METRICS,    _GK_POS_METRICS, []),
+    "CF / ST": (_CF_ATT_METRICS,  _CF_DEF_METRICS,  _CF_POS_METRICS),
+    "AM / W":  (_AMW_ATT_METRICS, _AMW_DEF_METRICS, _AMW_POS_METRICS),
+    "CM":      (_CM_ATT_METRICS,  _CM_DEF_METRICS,  _CM_POS_METRICS),
+    "DM":      (_CM_ATT_METRICS,  _CM_DEF_METRICS,  _CM_POS_METRICS),
+    "FB":      (_FB_ATT_METRICS,  _FB_DEF_METRICS,  _FB_POS_METRICS),
+    "CB":      (_CB_ATT_METRICS,  _CB_DEF_METRICS,  _CB_POS_METRICS),
+    "GK":      (_GK_METRICS,      _GK_POS_METRICS,  []),
 }
 
 
@@ -1724,34 +1865,52 @@ _PRO_CSS = """
 :root { --card:#141823; }
 .pro-wrap{ display:flex; justify-content:center; }
 .pro-card{
-  position:relative; width:min(420px,96%);
-  display:grid; grid-template-columns:96px 1fr 48px;
-  gap:12px; align-items:start;
+  position:relative; width:min(500px,96%);
+  display:grid; grid-template-columns:96px 100px 1fr;
+  column-gap:14px; align-items:start;
   background:var(--card); border:1px solid rgba(255,255,255,.06);
-  border-radius:20px; padding:16px; margin-bottom:12px;
+  border-radius:20px; padding:16px 44px 16px 16px; margin-bottom:12px;
   box-shadow:inset 0 1px 0 rgba(255,255,255,.03), 0 6px 24px rgba(0,0,0,.35);
 }
+/* col 1 — avatar */
 .pro-avatar{ width:96px; height:96px; border-radius:12px; border:1px solid #2a3145; overflow:hidden; background:#0b0d12; }
 .pro-avatar img{ width:100%; height:100%; object-fit:cover; image-rendering:auto; transform:translateZ(0); }
-.flagchip{ display:inline-flex; align-items:center; gap:6px; background:transparent; border:none; padding:0; height:auto; }
-.flagchip img{ width:26px; height:18px; border-radius:2px; display:block; }
-.chip{ background:transparent; color:#a6a6a6; border:none; padding:0; border-radius:0; font-size:15px; line-height:18px; opacity:.92; }
-.row{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:2px 0; }
-.leftrow1{ margin-top:6px; } .leftrow-foot{ margin-top:2px; } .leftrow-contract{ margin-top:10px; }
-.pill{
-  min-width:36px; height:28px; padding:0 8px; border-radius:6px;
-  display:inline-flex; align-items:center; justify-content:center;
-  font-weight:800; font-size:18px; color:#0b0d12; box-sizing:border-box;
+/* col 2 — meta stacked: flag+age | mins | foot | [flex spacer] | contract | team·league */
+.pro-meta{
+  display:flex; flex-direction:column;
+  justify-content:space-between;
+  height:96px; padding:2px 0;
+  overflow:hidden;
 }
-.name{ font-weight:800; font-size:22px; color:#e8ecff; margin-bottom:6px; letter-spacing:.2px; line-height:1.15; }
-.sub{ color:#a8b3cf; font-size:15px; opacity:.9; }
-.posrow{ margin-top:13.5px; }
-.postext{ font-weight:600; font-size:14.5px; letter-spacing:.2px; margin-right:11px; }
-.rank{ position:absolute; top:10.5px; right:14px; color:#b7bfe1; font-weight:800; font-size:18px; text-align:right; pointer-events:none; }
-.teamline{ color:#dbe3ff; font-size:14px; font-weight:600; margin-top:6.5px; letter-spacing:.05px; opacity:.95; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.tl-wrap{ position:relative; } .tl-has-crest{ padding-left:24px; }
-.crest-icon{ height:1.35em; width:auto; object-fit:contain; image-rendering:auto; }
-.crest-abs{ position:absolute; left:0; top:50%; transform:translateY(-50%); pointer-events:none; }
+.meta-top{ display:flex; flex-direction:column; gap:3px; }
+.meta-bottom{ display:flex; flex-direction:column; gap:3px; }
+.meta-flag-age{ display:flex; align-items:center; gap:5px; }
+.meta-mins{ color:#a6a6a6; font-size:13.5px; font-weight:600; line-height:1; }
+.meta-foot{ color:#a6a6a6; font-size:13.5px; font-weight:600; line-height:1; }
+.meta-contract{ color:#a6a6a6; font-size:13px; font-weight:700; line-height:1; letter-spacing:.04em; }
+.meta-team{
+  color:#dbe3ff; font-size:11.5px; font-weight:600; line-height:1.2;
+  opacity:.95; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  display:flex; align-items:center; gap:4px;
+}
+.meta-team img.crest-sm{ height:13px; width:auto; object-fit:contain; flex-shrink:0; }
+/* col 3 — name + roles + position */
+.pro-right{ display:flex; flex-direction:column; min-height:96px; }
+.pro-right-top{ flex:1; }
+.flagchip{ display:inline-flex; align-items:center; gap:5px; background:transparent; border:none; padding:0; height:auto; }
+.flagchip img{ width:20px; height:14px; border-radius:2px; display:block; }
+.chip{ background:transparent; color:#a6a6a6; border:none; padding:0; border-radius:0; font-size:13.5px; line-height:18px; opacity:.92; }
+.pill{
+  min-width:32px; height:25px; padding:0 7px; border-radius:6px;
+  display:inline-flex; align-items:center; justify-content:center;
+  font-weight:800; font-size:16px; color:#0b0d12; box-sizing:border-box;
+}
+.name{ font-weight:800; font-size:20px; color:#e8ecff; margin-bottom:4px; letter-spacing:.2px; line-height:1.15; }
+.sub{ color:#a8b3cf; font-size:13.5px; opacity:.9; }
+.role-row{ display:flex; gap:7px; align-items:center; margin:2px 0; }
+.posrow{ display:flex; flex-wrap:wrap; gap:0; margin-top:8px; }
+.postext{ font-weight:600; font-size:13px; letter-spacing:.2px; margin-right:9px; }
+.rank{ position:absolute; top:10px; right:12px; color:#b7bfe1; font-weight:800; font-size:17px; text-align:right; pointer-events:none; }
 .grp-header{
   font-size:9px; font-weight:900; letter-spacing:.18em; color:#ef4444;
   text-transform:uppercase; margin:18px 0 8px 0;
@@ -1759,11 +1918,11 @@ _PRO_CSS = """
 }
 .m-sec{ background:#121621; border:1px solid #242b3b; border-radius:14px; padding:9px 11px; }
 .m-title{ color:#e8ecff; font-weight:800; letter-spacing:.02em; margin:4px 0 8px 0; font-size:12px; }
-.m-row{ display:flex; align-items:center; gap:8px; padding:6px 6px; border-radius:8px; }
-.m-label{ color:#c9d3f2; font-size:14.5px; flex:1 1 0%; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.m-row{ display:flex; align-items:center; gap:8px; padding:5px 6px; border-radius:8px; }
+.m-label{ color:#c9d3f2; font-size:13.5px; flex:1 1 0%; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .m-right{ display:flex; align-items:center; gap:8px; flex:0 0 auto; }
-.m-val{ color:#a8b3cf; font-size:12px; opacity:.9; min-width:48px; text-align:right; }
-.m-badge{ min-width:40px; text-align:center; padding:2px 9px; border-radius:7px; font-weight:800; font-size:17px; color:#0b0d12; }
+.m-val{ color:#a8b3cf; font-size:12px; opacity:.9; min-width:44px; text-align:right; }
+.m-badge{ min-width:38px; text-align:center; padding:2px 8px; border-radius:7px; font-weight:800; font-size:16px; color:#0b0d12; }
 .metrics-grid{ display:grid; grid-template-columns:1fr; gap:10px; }
 @media (min-width:720px){ .metrics-grid{ grid-template-columns:repeat(3,1fr); } }
 </style>
@@ -1779,7 +1938,13 @@ def render_pro_layout_v2(team_players_df: pd.DataFrame, df_sc, df_full: pd.DataF
         return _TOK_TO_GRP.get(_tok(str(pos_str)), "CM")
 
     ALL_MET = list({met for _, met in
-        _ATT_METRICS + _DEF_METRICS + _POS_METRICS + _GK_METRICS + _GK_POS_METRICS})
+        _CF_ATT_METRICS + _CF_DEF_METRICS + _CF_POS_METRICS +
+        _AMW_ATT_METRICS + _AMW_DEF_METRICS + _AMW_POS_METRICS +
+        _CM_ATT_METRICS + _CM_DEF_METRICS + _CM_POS_METRICS +
+        _FB_ATT_METRICS + _FB_DEF_METRICS + _FB_POS_METRICS +
+        _CB_ATT_METRICS + _CB_DEF_METRICS + _CB_POS_METRICS +
+        _GK_METRICS + _GK_POS_METRICS} |
+        {met for role_cfg in _CM_ALL_ROLES.values() for met in role_cfg["metrics"]})
 
     @st.cache_data(show_spinner=False)
     def _build_ref(df_raw: pd.DataFrame) -> pd.DataFrame:
@@ -1870,26 +2035,8 @@ def render_pro_layout_v2(team_players_df: pd.DataFrame, df_sc, df_full: pd.DataF
             global_overrides={},
         )
 
-        # ── crest ──────────────────────────────────────────────────────────
-        crest_store_key = f"{_norm_str(team)}|{_norm_str(league)}"
-        crest_url = st.session_state["crest_map"].get(crest_store_key, "")
-        if not crest_url:
-            t_url = _get_fotmob_url(team)
-            if t_url:
-                tid = re.search(r"/teams/(\d+)/", t_url)
-                crest_url = f"https://images.fotmob.com/image_resources/logo/teamlogo/{tid.group(1)}.png" if tid else ""
-
-        if crest_url:
-            teamline_html = (
-                '<div class="teamline tl-wrap tl-has-crest">'
-                f'<img class="crest-icon crest-abs" src="{crest_url}" alt="">'
-                f'<span>{team} \u00b7 {league}</span></div>'
-            )
-        else:
-            teamline_html = f'<div class="teamline">{team} \u00b7 {league}</div>'
-
-        # ── role pills ─────────────────────────────────────────────────────
-        all_role_pairs = _GROUP_ROLES.get(grp, [])
+        # ── role pills — dynamic top-3 for CM/DM, fixed for others ───────────
+        all_role_pairs = _GROUP_ROLES.get(grp)  # None means CM/DM dynamic
         pills_html = ""
 
         sc_row = None
@@ -1899,42 +2046,81 @@ def render_pro_layout_v2(team_players_df: pd.DataFrame, df_sc, df_full: pd.DataF
             if not sc_hits.empty:
                 sc_row = sc_hits.iloc[0]
 
-        for col_name, lbl in all_role_pairs[:3]:
-            val = 0
-            if sc_row is not None and col_name in sc_row.index and pd.notna(sc_row[col_name]):
-                val = _show99(sc_row[col_name])
-            else:
-                rk = ROLE_KEY_MAP.get(_tok(pos), "ATT")
-                bucket_roles = ROLE_BUCKETS.get(rk, {})
-                metrics = {}
-                for rn, spec in bucket_roles.items():
-                    if lbl.lower().replace(" ", "") in rn.lower().replace(" ", ""):
-                        metrics = spec.get("metrics", {}); break
-                if not metrics and bucket_roles:
-                    metrics = next(iter(bucket_roles.values())).get("metrics", {})
-                val = _show99(_role_score_from_ref(player, team, metrics))
-            pills_html += (
-                f'<div class="row" style="align-items:center;">'
-                f'<span class="pill" style="background:{_pro_rating_color_v2(val)}">{_f2(val)}</span>'
-                f'<span class="sub">{lbl}</span></div>'
-            )
+        if all_role_pairs is None:
+            # CM / DM: compute all 5 scores, show top 3
+            scored_roles = []
+            for role_name, role_cfg in _CM_ALL_ROLES.items():
+                val = _show99(_role_score_from_ref(player, team, role_cfg["metrics"]))
+                scored_roles.append((val, role_name))
+            scored_roles.sort(key=lambda x: -x[0])
+            for val, role_name in scored_roles[:3]:
+                pills_html += (
+                    f'<div class="role-row">'
+                    f'<span class="pill" style="background:{_pro_rating_color_v2(val)}">{_f2(val)}</span>'
+                    f'<span class="sub">{role_name}</span></div>'
+                )
+        else:
+            for col_name, lbl in all_role_pairs[:3]:
+                val = 0
+                if sc_row is not None and col_name in sc_row.index and pd.notna(sc_row[col_name]):
+                    val = _show99(sc_row[col_name])
+                else:
+                    rk = ROLE_KEY_MAP.get(_tok(pos), "ATT")
+                    bucket_roles = ROLE_BUCKETS.get(rk, {})
+                    metrics = {}
+                    for rn, spec in bucket_roles.items():
+                        if lbl.lower().replace(" ", "") in rn.lower().replace(" ", ""):
+                            metrics = spec.get("metrics", {}); break
+                    if not metrics and bucket_roles:
+                        metrics = next(iter(bucket_roles.values())).get("metrics", {})
+                    val = _show99(_role_score_from_ref(player, team, metrics))
+                pills_html += (
+                    f'<div class="role-row">'
+                    f'<span class="pill" style="background:{_pro_rating_color_v2(val)}">{_f2(val)}</span>'
+                    f'<span class="sub">{lbl}</span></div>'
+                )
+
+        # ── crest for meta column ──────────────────────────────────────────
+        crest_store_key = f"{_norm_str(team)}|{_norm_str(league)}"
+        crest_url = st.session_state["crest_map"].get(crest_store_key, "")
+        if not crest_url:
+            t_url = _get_fotmob_url(team)
+            if t_url:
+                tid = re.search(r"/teams/(\d+)/", t_url)
+                crest_url = f"https://images.fotmob.com/image_resources/logo/teamlogo/{tid.group(1)}.png" if tid else ""
+
+        crest_img = f'<img class="crest-sm" src="{crest_url}" alt="">' if crest_url else ""
+        team_meta_html = (
+            f'<div class="meta-team">{crest_img}'
+            f'<span>{team}&nbsp;·&nbsp;{league}</span></div>'
+        )
 
         card_html = (
             '<div class="pro-wrap">'
             '<div class="pro-card">'
-            '<div class="leftcol">'
+            # col 1 — avatar
             '<div class="pro-avatar">'
             f'<img src="{avatar_url}" alt="{player}" loading="lazy" />'
             '</div>'
-            f'<div class="row leftrow1">{flag}<span class="chip">{age_txt}</span></div>'
-            f'<div class="row leftrow-foot"><span class="chip">{mins_txt} &nbsp; {foot}</span></div>'
-            f'<div class="row leftrow-contract"><span class="chip">{contract_txt}</span></div>'
+            # col 2 — meta: top (flag+age, mins, foot) / bottom (contract, team·league)
+            '<div class="pro-meta">'
+            '<div class="meta-top">'
+            f'<div class="meta-flag-age">{flag}<span class="chip">{age_txt}</span></div>'
+            f'<div class="meta-mins">{mins_txt}</div>'
+            f'<div class="meta-foot">{foot}</div>'
             '</div>'
-            '<div>'
+            '<div class="meta-bottom">'
+            f'<div class="meta-contract">{contract_txt}</div>'
+            f'{team_meta_html}'
+            '</div>'
+            '</div>'
+            # col 3 — name, roles, position
+            '<div class="pro-right">'
+            '<div class="pro-right-top">'
             f'<div class="name">{player}</div>'
             f'{pills_html}'
-            f'<div class="row posrow">{pos_html}</div>'
-            f'{teamline_html}'
+            '</div>'
+            f'<div class="posrow">{pos_html}</div>'
             '</div>'
             f'<div class="rank">#{rank_i:02d}</div>'
             '</div>'

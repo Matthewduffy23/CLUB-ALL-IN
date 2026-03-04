@@ -1,4 +1,4 @@
-# team_squad_app.py — Combined Team Profile + Squad Depth Chart
+# team_squad_app.py — Combined Team Profile + Squad Depth Chart + Pro Layout
 # pip install streamlit pandas numpy matplotlib scikit-learn requests
 # streamlit run team_squad_app.py
 
@@ -22,7 +22,6 @@ st.set_page_config(page_title="TEAM HQ + SQUAD", layout="wide")
 # SHARED CONSTANTS / HELPERS
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# ── Column normalisation ──────────────────────────────────────────────────────
 COL_MAP = {
     "League":            ["league"],
     "Team":              ["team"],
@@ -84,7 +83,6 @@ METRIC_LABELS = {
 }
 def mlabel(col): return METRIC_LABELS.get(col, col)
 
-# ── League / region helpers ───────────────────────────────────────────────────
 LEAGUE_STRENGTHS = {
     "England 1":100.00,"Spain 1":87.84,"Germany 1":87.45,"Italy 1":85.88,"France 1":83.14,
     "England 2":75.10,"Belgium 1":74.51,"Brazil 1":74.31,"Portugal 1":72.94,"Argentina 1":71.37,
@@ -145,7 +143,6 @@ def flag_html(league_name):
     src=f"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/{code}.svg"
     return f"<img src='{src}' style='height:18px;vertical-align:middle;margin-right:4px;'>"
 
-# ── Colour helpers ────────────────────────────────────────────────────────────
 def rating_color(v):
     v=float(v)
     if v>=85: return "#2E6114"
@@ -160,9 +157,6 @@ def fmt2(n):
     try: return f"{max(0,min(99,int(float(n)))):02d}"
     except: return "00"
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# TEAM STATS CSV LOADER & NORMALISATION
-# ═══════════════════════════════════════════════════════════════════════════════
 @st.cache_data(show_spinner=False)
 def _read_team_csv(data:bytes)->pd.DataFrame: return pd.read_csv(io.BytesIO(data))
 @st.cache_data(show_spinner=False)
@@ -180,9 +174,6 @@ def pct_rank(series:pd.Series,invert:bool=False)->pd.Series:
     r=series.rank(pct=True)*100
     return 100-r if invert else r
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# SQUAD DEPTH — Role Buckets, Formation, Helpers (from squad app)
-# ═══════════════════════════════════════════════════════════════════════════════
 ROLE_BUCKETS = {
     "GK":{"Shot Stopper GK":{"metrics":{"Prevented goals per 90":3,"Save rate, %":1}},
           "Ball Playing GK":{"metrics":{"Passes per 90":1,"Accurate passes, %":3,"Accurate long passes, %":2}},
@@ -460,7 +451,6 @@ def assign_players(players,formation_key):
             for i,p in enumerate(depth_rem):
                 slot_map[ordered[i%n]["id"]].append(p)
 
-    # 4-back CB redistribution
     four_back={"4-2-3-1","4-3-3","4-4-2","4-1-4-1","3-4-3"}
     if formation_key in four_back:
         cb1_id=next((s["id"] for s in slots if s["id"]=="CB1"),None)
@@ -477,7 +467,6 @@ def assign_players(players,formation_key):
             for i,p in enumerate(oth_p): (left if i%2==0 else right).append(p)
             slot_map[cb1_id]=left; slot_map[cb2_id]=right
 
-    # 3-back CB redistribution
     three_back={"3-5-2","3-4-3"}
     if formation_key in three_back:
         lcb_id=next((s["id"] for s in slots if s["id"]=="LCB"),None)
@@ -499,7 +488,6 @@ def assign_players(players,formation_key):
                 slot_map[cb_id]=[p for i,p in enumerate(remaining) if i%2==0]
                 slot_map[rcb_id]=[p for i,p in enumerate(remaining) if i%2==1]
 
-    # Fallback pass
     by_label_id={s["label"]:[] for s in slots}
     for s in slots: by_label_id[s["label"]].append(s["id"])
     remaining=[p for p in players if p["_key"] not in assigned]
@@ -526,7 +514,6 @@ def assign_players(players,formation_key):
     depth.sort(key=lambda p:-float(p.get("Minutes played") or 0))
     return slot_map,depth
 
-# Role score HTML
 def all_roles_html(player,df_sc,fs="8px"):
     if df_sc is None or df_sc.empty: return ""
     rows=df_sc[df_sc["Player"]==player.get("Player","")]
@@ -670,7 +657,6 @@ def render_squad_pitch(team,league,formation,slots,slot_map,depth,df_sc,
 FONT_URL="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800;900&display=swap"
 
 def make_sq_png_page(pitch_html:str, team:str, pitch_w:int=700)->str:
-    """HTML page that auto-captures the squad pitch as PNG using html2canvas."""
     BG="#0a0f1c"
     est_h=round(pitch_w*1.42)+180
     return f"""<!DOCTYPE html>
@@ -705,14 +691,587 @@ document.fonts.ready.then(function(){{
 }});
 </script></body></html>"""
 
-# ── Badge loaders ─────────────────────────────────────────────────────────────
-# Tries your repo filenames first, then common alternatives, then falls back silently.
 
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PRO LAYOUT HELPERS (flags, foot, photo resolver, chip colors)
+# ═══════════════════════════════════════════════════════════════════════════════
+import unicodedata as _ud2
+import re as _re2
+from difflib import SequenceMatcher as _SM
+
+_POS_COLORS_PRO = {
+    "CF":"#6EA8FF","LWF":"#6EA8FF","RWF":"#6EA8FF","LW":"#6EA8FF","RW":"#6EA8FF",
+    "LAMF":"#6EA8FF","RAMF":"#6EA8FF","AMF":"#7FE28A",
+    "LCMF":"#5FD37A","RCMF":"#5FD37A","CMF":"#5FD37A",
+    "DMF":"#31B56B","LDMF":"#31B56B","RDMF":"#31B56B",
+    "LWB":"#FFD34D","RWB":"#FFD34D","LB":"#FF9A3C","RB":"#FF9A3C",
+    "CB":"#D1763A","LCB":"#D1763A","RCB":"#D1763A",
+    "GK":"#B8A1FF",
+}
+
+def _pro_chip_color(p: str) -> str:
+    return _POS_COLORS_PRO.get(str(p).strip().upper(), "#2d3550")
+
+_TWEMOJI_SPECIAL = {
+    "eng":"1f3f4-e0067-e0062-e0065-e006e-e0067-e007f",
+    "sct":"1f3f4-e0067-e0062-e0073-e0063-e0074-e007f",
+    "wls":"1f3f4-e0067-e0062-e0077-e006c-e0073-e007f",
+}
+_COUNTRY_TO_CC = {
+    "united kingdom":"gb","great britain":"gb","northern ireland":"gb","england":"eng","scotland":"sct","wales":"wls",
+    "ireland":"ie","republic of ireland":"ie","spain":"es","france":"fr","germany":"de","italy":"it","portugal":"pt",
+    "netherlands":"nl","belgium":"be","austria":"at","switzerland":"ch","denmark":"dk","sweden":"se","norway":"no",
+    "finland":"fi","iceland":"is","poland":"pl","czech republic":"cz","czechia":"cz","slovakia":"sk","slovenia":"si",
+    "croatia":"hr","serbia":"rs","bosnia":"ba","montenegro":"me","kosovo":"xk","albania":"al","greece":"gr",
+    "hungary":"hu","romania":"ro","bulgaria":"bg","russia":"ru","ukraine":"ua","georgia":"ge","kazakhstan":"kz",
+    "azerbaijan":"az","armenia":"am","turkey":"tr","cyprus":"cy","luxembourg":"lu","estonia":"ee","latvia":"lv",
+    "lithuania":"lt","moldova":"md","north macedonia":"mk","qatar":"qa","saudi arabia":"sa","uae":"ae",
+    "united arab emirates":"ae","israel":"il","japan":"jp","south korea":"kr","korea republic":"kr","china":"cn",
+    "brazil":"br","argentina":"ar","uruguay":"uy","chile":"cl","colombia":"co","peru":"pe","ecuador":"ec",
+    "paraguay":"py","bolivia":"bo","mexico":"mx","canada":"ca","united states":"us","usa":"us",
+    "australia":"au","new zealand":"nz",
+    "algeria":"dz","cameroon":"cm","ghana":"gh","nigeria":"ng","senegal":"sn","morocco":"ma","egypt":"eg",
+    "ivory coast":"ci","cote d'ivoire":"ci","côte d'ivoire":"ci","dr congo":"cd","drc":"cd","congo":"cg",
+    "south africa":"za","kenya":"ke","mali":"ml","guinea":"gn","sierra leone":"sl","angola":"ao",
+    "burkina faso":"bf","togo":"tg","gabon":"ga","benin":"bj","zambia":"zm","mozambique":"mz",
+    "zimbabwe":"zw","tanzania":"tz","uganda":"ug","rwanda":"rw","liberia":"lr","gambia":"gm","namibia":"na",
+    "cape verde":"cv","cabo verde":"cv","ethiopia":"et","sudan":"sd","tunisia":"tn","libya":"ly",
+    "palestine":"ps","hong kong":"hk","curacao":"cw","curaçao":"cw",
+}
+
+def _norm(s: str) -> str:
+    if not s: return ""
+    return _ud2.normalize("NFKD", str(s)).encode("ascii","ignore").decode("ascii").strip().lower()
+
+def _cc_to_twemoji(cc):
+    if not cc or len(cc) != 2: return None
+    a, b = cc.upper()
+    return f"{0x1F1E6+(ord(a)-65):04x}-{0x1F1E6+(ord(b)-65):04x}"
+
+def _flag_html(country_name: str) -> str:
+    if not country_name: return "<span class='chip'>—</span>"
+    n = _norm(country_name)
+    cc = _COUNTRY_TO_CC.get(n, "")
+    if not cc: return "<span class='chip'>—</span>"
+    if cc in _TWEMOJI_SPECIAL:
+        src = f"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/{_TWEMOJI_SPECIAL[cc]}.svg"
+        return f"<span class='flagchip'><img src='{src}' alt='{country_name}'></span>"
+    code = _cc_to_twemoji(cc)
+    if code:
+        src = f"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/{code}.svg"
+        return f"<span class='flagchip'><img src='{src}' alt='{country_name}'></span>"
+    return f"<span class='chip'>{cc.upper()}</span>"
+
+def _get_foot(row) -> str:
+    for col in ("Foot", "Preferred foot", "Preferred Foot"):
+        if col in row.index:
+            val = row[col]
+            try:
+                if pd.isna(val): continue
+            except Exception:
+                pass
+            s = str(val).strip()
+            if s and s.lower() not in {"nan","none","null"}: return s
+    return ""
+
+def _slug_name(s: str) -> str:
+    if not s: return ""
+    s = str(s).strip().lower()
+    for k,v in {"ø":"o","æ":"ae","å":"a","ä":"a","ö":"o","ü":"u","ß":"ss","ł":"l","ç":"c","ş":"s","ğ":"g"}.items():
+        s = s.replace(k, v)
+    s = _ud2.normalize("NFKD", s)
+    s = "".join(c for c in s if not _ud2.combining(c))
+    return _re2.sub(r"[^a-z0-9]+", "", s)
+
+def _slug_surname(player: str) -> str:
+    p = (player or "").strip()
+    if "," in p: return _slug_name(p.split(",",1)[0].strip())
+    parts = p.split()
+    return _slug_name(parts[-1]) if parts else ""
+
+def _fotmob_squad_cached(team_id: str) -> list:
+    cache = st.session_state.setdefault("_fotmob_squad_cache2", {})
+    if team_id in cache: return cache[team_id] or []
+    squad = []
+    try:
+        r = requests.get(f"https://www.fotmob.com/api/teams?id={team_id}",
+                         timeout=10, headers={"User-Agent":"Mozilla/5.0"})
+        if r.status_code == 200:
+            data = r.json() or {}
+            raw = data.get("squad", None)
+            if isinstance(raw, list):
+                for sec in raw:
+                    for m in (sec.get("members") or sec.get("players") or []):
+                        if isinstance(m, dict): squad.append(m)
+            elif isinstance(raw, dict):
+                for k in ("members","players"):
+                    for m in (raw.get(k) or []):
+                        if isinstance(m, dict): squad.append(m)
+    except Exception:
+        pass
+    cache[team_id] = squad
+    return squad
+
+def _get_fotmob_url(team: str) -> str:
+    return (_FOTMOB_URLS.get(team) or "").strip()
+
+def resolve_player_photo(player, team, league, key_id, session_photo_map, global_overrides):
+    if session_photo_map.get(key_id): return session_photo_map[key_id]
+    if global_overrides.get(key_id): return global_overrides[key_id]
+    t_url = _get_fotmob_url(team)
+    m = re.search(r"/teams/(\d+)/", t_url or "")
+    if m:
+        squad = _fotmob_squad_cached(m.group(1))
+        tgt_sn = _slug_surname(player)
+        tgt_fn = _slug_name(player)
+        best_id = ""
+        if tgt_sn:
+            for mem in squad:
+                name = mem.get("name") or mem.get("playerName") or ""
+                pid  = str(mem.get("id") or mem.get("playerId") or "")
+                if not pid: continue
+                if _slug_surname(name) == tgt_sn:
+                    best_id = pid
+                    if tgt_fn and tgt_fn in _slug_name(name): break
+        if not best_id and tgt_fn:
+            for mem in squad:
+                name = mem.get("name") or mem.get("playerName") or ""
+                pid  = str(mem.get("id") or mem.get("playerId") or "")
+                if pid and tgt_fn in _slug_name(name):
+                    best_id = pid; break
+        if not best_id and tgt_sn:
+            bsc, bpid = 0.0, ""
+            for mem in squad:
+                name = mem.get("name") or mem.get("playerName") or ""
+                pid  = str(mem.get("id") or mem.get("playerId") or "")
+                if not pid: continue
+                sc = _SM(None, _slug_surname(name), tgt_sn).ratio()
+                if sc > bsc: bsc, bpid = sc, pid
+            if bsc >= 0.86: best_id = bpid
+        if best_id and best_id.isdigit():
+            url = f"https://images.fotmob.com/image_resources/playerimages/{best_id}.png"
+            session_photo_map[key_id] = url
+            return url
+    return "https://i.redd.it/43axcjdu59nd1.jpeg"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PRO LAYOUT
+# ═══════════════════════════════════════════════════════════════════════════════
+# Position groups displayed attack → defence. Each tuple: (display label, list of raw position tokens)
+# ═══════════════════════════════════════════════════════════════════════════════
+# PRO LAYOUT  — interactive Streamlit cards, grouped attack→defence, sorted by minutes
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Position groups (attack → defence). Each player's PRIMARY token is matched.
+PRO_LAYOUT_GROUPS = [
+    ("CF / ST",  ["CF","LWF","RWF"]),
+    ("AM / W",   ["AMF","LAMF","RAMF","LW","RW"]),
+    ("CM",       ["LCMF","RCMF","CMF"]),
+    ("DM",       ["DMF","LDMF","RDMF"]),
+    ("FB",       ["LB","RB","LWB","RWB"]),
+    ("CB",       ["CB","LCB","RCB"]),
+    ("GK",       ["GK"]),
+]
+
+# Role pills per group  →  list of (score_col, display_label)
+_GROUP_ROLES = {
+    "CF / ST": [
+        ("Goal Threat CF Score",    "Goal Threat"),
+        ("Link-Up CF Score",        "Link-Up"),
+        ("Target Man CF Score",     "Target Man"),
+    ],
+    "AM / W": [
+        ("Goal Threat Score",       "Goal Threat"),
+        ("Playmaker Score",         "Playmaker"),
+        ("Ball Carrier Score",      "Ball Carrier"),
+        ("Modern Winger Score",     "Modern Winger"),
+        ("Traditional Winger Score","Traditional Winger"),
+    ],
+    "CM": [
+        ("Deep Playmaker CM Score", "Deep Playmaker"),
+        ("Advanced Playmaker CM Score","Advanced Playmaker"),
+        ("Box to Box Score",        "Box to Box"),
+        ("Ball Winner Score",       "Ball Winner"),
+        ("Defensive Midfielder DM Score","Def. MF"),
+    ],
+    "DM": [
+        ("Defensive Midfielder DM Score","Def. MF"),
+        ("Modern 6 Score",          "Modern 6"),
+        ("Ball Winner Score",       "Ball Winner"),
+        ("Deep Playmaker CM Score", "Deep Playmaker"),
+    ],
+    "FB": [
+        ("Build Up FB Score",       "Build Up"),
+        ("Attacking FB Score",      "Attacking"),
+        ("Defensive FB Score",      "Defensive"),
+        ("Wide Creator Score",      "Wide Creator"),
+    ],
+    "CB": [
+        ("Ball Playing CB Score",   "Ball Playing"),
+        ("Wide CB Score",           "Wide CB"),
+        ("Box Defender Score",      "Box Defender"),
+    ],
+    "GK": [
+        ("Shot Stopper GK Score",   "Shot Stopper"),
+        ("Ball Playing GK Score",   "Ball Playing GK"),
+        ("Sweeper GK Score",        "Sweeper GK"),
+    ],
+}
+
+# Individual metric dropdowns per group: (display_label, raw_column)
+_ATT_METRICS = [
+    ("Crosses",               "Crosses per 90"),
+    ("Crossing Acc %",        "Accurate crosses, %"),
+    ("Goals (NP)",            "Non-penalty goals per 90"),
+    ("xG",                    "xG per 90"),
+    ("Conversion %",          "Goal conversion, %"),
+    ("xA",                    "xA per 90"),
+    ("Progressive Runs",      "Progressive runs per 90"),
+    ("Shots",                 "Shots per 90"),
+    ("Shot Acc %",            "Shots on target, %"),
+    ("Box Touches",           "Touches in box per 90"),
+]
+_DEF_METRICS = [
+    ("Aerial Duels",          "Aerial duels per 90"),
+    ("Aerial %",              "Aerial duels won, %"),
+    ("Def. Duels",            "Defensive duels per 90"),
+    ("Def. Duel %",           "Defensive duels won, %"),
+    ("PAdj Interceptions",    "PAdj Interceptions"),
+    ("Shots Blocked",         "Shots blocked per 90"),
+]
+_POS_METRICS = [
+    ("Accelerations",         "Accelerations per 90"),
+    ("Deep Completions",      "Deep completions per 90"),
+    ("Dribbles",              "Dribbles per 90"),
+    ("Dribble %",             "Successful dribbles, %"),
+    ("Fwd Passes",            "Forward passes per 90"),
+    ("Fwd Pass %",            "Accurate forward passes, %"),
+    ("Long Passes",           "Long passes per 90"),
+    ("Long Pass %",           "Accurate long passes, %"),
+    ("Key Passes",            "Key passes per 90"),
+    ("Passes",                "Passes per 90"),
+    ("Pass %",                "Accurate passes, %"),
+    ("Passes to F3rd",        "Passes to final third per 90"),
+    ("Passes to F3rd %",      "Accurate passes to final third, %"),
+    ("Passes to Box",         "Passes to penalty area per 90"),
+    ("Passes to Box %",       "Accurate passes to penalty area, %"),
+    ("Prog. Passes",          "Progressive passes per 90"),
+    ("Prog. Pass %",          "Accurate progressive passes, %"),
+    ("Smart Passes",          "Smart passes per 90"),
+]
+_GK_METRICS = [
+    ("Exits",                 "Exits per 90"),
+    ("Goals Prevented",       "Prevented goals per 90"),
+    ("Goals Conceded",        "Conceded goals per 90"),
+    ("Save Rate %",           "Save rate, %"),
+    ("Shots Against",         "Shots against per 90"),
+    ("xG Against",            "xG against per 90"),
+]
+_GK_POS_METRICS = [
+    ("Long Passes",           "Long passes per 90"),
+    ("Long Pass %",           "Accurate long passes, %"),
+    ("Passes",                "Passes per 90"),
+    ("Pass %",                "Accurate passes, %"),
+]
+
+_GROUP_METRICS = {
+    "CF / ST": (_ATT_METRICS,   _DEF_METRICS,   _POS_METRICS),
+    "AM / W":  (_ATT_METRICS,   _DEF_METRICS,   _POS_METRICS),
+    "CM":      (_ATT_METRICS,   _DEF_METRICS,   _POS_METRICS),
+    "DM":      (_ATT_METRICS,   _DEF_METRICS,   _POS_METRICS),
+    "FB":      (_ATT_METRICS,   _DEF_METRICS,   _POS_METRICS),
+    "CB":      (_ATT_METRICS,   _DEF_METRICS,   _POS_METRICS),
+    "GK":      (_GK_METRICS,    _GK_POS_METRICS, []),
+}
+
+
+def _pro_rating_color_v2(v: float) -> str:
+    v = float(v)
+    for thr, col in [(85,"#2E6114"),(75,"#5C9E2E"),(66,"#7FBC41"),
+                     (55,"#A7D763"),(41,"#F6D645"),(25,"#D77A2E"),(0,"#C63733")]:
+        if v >= thr:
+            return col
+    return "#C63733"
+
+def _show99(x) -> int:
+    try: return max(0, min(99, int(float(x))))
+    except: return 0
+
+def _f2(n) -> str:
+    try: return f"{int(n):02d}"
+    except: return "00"
+
+def _metric_pct_v2(row, met):
+    col = f"{met} Percentile"
+    if col in row.index:
+        try:
+            v = float(row[col])
+            if not np.isnan(v): return v
+        except: pass
+    return np.nan
+
+def _metric_val_v2(row, met):
+    if met in row.index:
+        try:
+            v = float(row[met])
+            if not np.isnan(v): return v
+        except: pass
+    return np.nan
+
+def _avail_pairs(df, pairs):
+    out = []
+    for lab, met in pairs:
+        if met in df.columns or f"{met} Percentile" in df.columns:
+            out.append((lab, met))
+    return out
+
+def _sec_html_v2(title, pairs, df_view, row):
+    pairs = _avail_pairs(df_view, pairs)
+    rows = []
+    for lab, met in pairs:
+        pct  = _metric_pct_v2(row, met)
+        p    = _show99(pct if not np.isnan(pct) else 0.0)
+        rawv = _metric_val_v2(row, met)
+        rtxt = "—" if np.isnan(rawv) else f"{rawv:.2f}".rstrip("0").rstrip(".")
+        rows.append(
+            "<div class='m-row'>"
+            f"<div class='m-label'>{lab}</div>"
+            "<div class='m-right'>"
+            f"<div class='m-val'>{rtxt}</div>"
+            f"<div class='m-badge' style='background:{_pro_rating_color_v2(p)}'>{_f2(p)}</div>"
+            "</div></div>"
+        )
+    if not rows:
+        return ""
+    return f"<div class='m-sec'><div class='m-title'>{title}</div>{''.join(rows)}</div>"
+
+
+_PRO_CSS = """
+<style>
+:root { --card:#141823; }
+.pro-wrap{ display:flex; justify-content:center; }
+.pro-card{
+  position:relative; width:min(420px,96%);
+  display:grid; grid-template-columns:88px 1fr 48px;
+  gap:12px; align-items:start;
+  background:var(--card); border:1px solid rgba(255,255,255,.06);
+  border-radius:20px; padding:16px; margin-bottom:10px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.03), 0 6px 24px rgba(0,0,0,.35);
+}
+.pro-avatar{ width:88px; height:88px; border-radius:12px; border:1px solid #2a3145; overflow:hidden; background:#0b0d12; }
+.pro-avatar img{ width:100%; height:100%; object-fit:cover; }
+.flagchip{ display:inline-flex; align-items:center; gap:4px; padding:0; }
+.flagchip img{ width:22px; height:15px; border-radius:2px; display:block; }
+.chip{ background:transparent; color:#a6a6a6; border:none; padding:0; font-size:14px; line-height:18px; opacity:.92; }
+.row{ display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin:1px 0; }
+.pill{
+  min-width:34px; height:26px; padding:0 7px; border-radius:6px;
+  display:inline-flex; align-items:center; justify-content:center;
+  font-weight:800; font-size:17px; color:#0b0d12; box-sizing:border-box;
+}
+.name{ font-weight:800; font-size:20px; color:#e8ecff; margin-bottom:5px; line-height:1.15; }
+.sub{ color:#a8b3cf; font-size:14px; opacity:.9; }
+.postext{ font-weight:600; font-size:13.5px; margin-right:9px; }
+.rank{ position:absolute; top:10px; right:13px; color:#b7bfe1; font-weight:800; font-size:17px; pointer-events:none; }
+.teamline{ color:#dbe3ff; font-size:13px; font-weight:600; margin-top:5px; opacity:.95; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.tl-wrap{ position:relative; } .tl-has-crest{ padding-left:22px; }
+.crest-icon{ height:1.3em; width:auto; object-fit:contain; }
+.crest-abs{ position:absolute; left:0; top:50%; transform:translateY(-50%); pointer-events:none; }
+.grp-header{
+  font-size:9px; font-weight:900; letter-spacing:.18em; color:#ef4444;
+  text-transform:uppercase; margin:18px 0 8px 0;
+  border-left:3px solid #ef4444; padding-left:8px;
+}
+.m-sec{ background:#121621; border:1px solid #242b3b; border-radius:14px; padding:9px 11px; }
+.m-title{ color:#e8ecff; font-weight:800; letter-spacing:.02em; margin:4px 0 8px 0; font-size:12px; }
+.m-row{ display:flex; align-items:center; gap:8px; padding:6px 6px; border-radius:8px; }
+.m-label{ color:#c9d3f2; font-size:14.5px; flex:1 1 0%; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.m-right{ display:flex; align-items:center; gap:8px; flex:0 0 auto; }
+.m-val{ color:#a8b3cf; font-size:12px; opacity:.9; min-width:48px; text-align:right; }
+.m-badge{ min-width:40px; text-align:center; padding:2px 9px; border-radius:7px; font-weight:800; font-size:17px; color:#0b0d12; }
+.metrics-grid{ display:grid; grid-template-columns:1fr; gap:10px; }
+@media (min-width:720px){ .metrics-grid{ grid-template-columns:repeat(3,1fr); } }
+</style>
+"""
+
+def render_pro_layout_v2(team_players_df: pd.DataFrame, df_sc):
+    """
+    Interactive Streamlit pro layout.
+    Groups: attack → defence. Within each group: sorted by minutes played desc.
+    Role pills and metric expanders are position-group specific.
+    """
+    st.markdown(_PRO_CSS, unsafe_allow_html=True)
+
+    # Shared photo/crest state
+    st.session_state.setdefault("photo_map", {})
+    st.session_state.setdefault("crest_map", {})
+
+    # Build a merged df: player data + any pre-computed score cols from df_sc
+    if df_sc is not None and not df_sc.empty:
+        score_cols = [c for c in df_sc.columns if c not in team_players_df.columns or c == "Player"]
+        df_merged = team_players_df.merge(
+            df_sc[score_cols], on="Player", how="left"
+        )
+    else:
+        df_merged = team_players_df.copy()
+
+    rendered_any = False
+
+    for group_label, pos_toks in PRO_LAYOUT_GROUPS:
+        # filter to this position group by primary token
+        grp = df_merged[
+            df_merged["Position"].apply(lambda p: _tok(str(p)) in pos_toks)
+        ].copy()
+        if grp.empty:
+            continue
+
+        # sort by minutes played descending
+        mins_col = "Minutes played"
+        if mins_col in grp.columns:
+            grp = grp.sort_values(mins_col, ascending=False)
+        grp = grp.reset_index(drop=True)
+
+        # determine which role pills are available for this group
+        all_role_pairs = _GROUP_ROLES.get(group_label, [])
+        avail_roles = [(col, lbl) for col, lbl in all_role_pairs if col in df_merged.columns]
+
+        # group header
+        st.markdown(f"<div class='grp-header'>{group_label}</div>", unsafe_allow_html=True)
+        rendered_any = True
+
+        for i, row in grp.iterrows():
+            player  = str(row.get("Player", "")) or ""
+            team    = str(row.get("Team", "")) or ""
+            league  = str(row.get("League", "")) or ""
+            pos     = str(row.get("Position", "")) or ""
+
+            try:
+                age_val = int(float(row.get("Age") or 0)) if not pd.isna(row.get("Age", np.nan)) else 0
+            except Exception:
+                age_val = 0
+            age_txt = f"{age_val}y.o." if age_val > 0 else "—"
+
+            # minutes
+            try:
+                mins = int(float(row.get(mins_col) or 0))
+            except Exception:
+                mins = 0
+            mins_txt = f"{mins}′"
+
+            # contract
+            yrs  = contract_years(row.get("Contract expires", ""))
+            loan = is_loan(row)
+            lo   = is_loaned_out(row)
+            yt   = is_youth(row)
+            cy   = pd.to_datetime(row.get("Contract expires"), errors="coerce")
+            cyr  = int(cy.year) if pd.notna(cy) else 0
+            contract_txt = f"{cyr}" if cyr > 0 else "—"
+
+            # birth country flag
+            birth = row.get("Birth country", "") if "Birth country" in row.index else ""
+            flag  = _flag_html(str(birth) if birth else "")
+
+            # foot
+            foot = _get_foot(row) or "—"
+
+            # position chips
+            raw_pos = (pos or "").strip().upper()
+            codes = [c for c in re.split(r"[,\s/;]+", raw_pos) if c]
+            seen, ordered = set(), []
+            for c in codes:
+                if c not in seen:
+                    seen.add(c); ordered.append(c)
+            pos_html = "".join(
+                f"<span class='postext' style='color:{_pro_chip_color(c)}'>{c}</span>"
+                for c in ordered
+            )
+
+            # avatar
+            key_id = f"{_norm(player)}|{_norm(team)}"
+            avatar_url = resolve_player_photo(
+                player=player, team=team, league=league,
+                key_id=key_id,
+                session_photo_map=st.session_state["photo_map"],
+                global_overrides={},
+            )
+
+            # crest
+            crest_store_key = f"{_norm(team)}|{_norm(league)}"
+            crest_url = st.session_state["crest_map"].get(crest_store_key, "")
+            if not crest_url:
+                t_url = _get_fotmob_url(team)
+                if t_url:
+                    tid = re.search(r"/teams/(\d+)/", t_url)
+                    crest_url = f"https://images.fotmob.com/image_resources/logo/teamlogo/{tid.group(1)}.png" if tid else ""
+
+            if crest_url:
+                teamline_html = (
+                    f"<div class='teamline tl-wrap tl-has-crest'>"
+                    f"<img class='crest-icon crest-abs' src='{crest_url}' alt=''>"
+                    f"<span>{team} · {league}</span></div>"
+                )
+            else:
+                teamline_html = f"<div class='teamline'>{team} · {league}</div>"
+
+            # role pills (up to 3 from avail_roles)
+            pills_html = ""
+            for col, lbl in avail_roles[:3]:
+                val = _show99(row.get(col, 0))
+                pills_html += (
+                    f"<div class='row' style='align-items:center;'>"
+                    f"<span class='pill' style='background:{_pro_rating_color_v2(val)}'>{_f2(val)}</span>"
+                    f"<span class='sub'>{lbl}</span></div>"
+                )
+
+            st.markdown(f"""
+<div class='pro-wrap'>
+  <div class='pro-card'>
+    <div>
+      <div class='pro-avatar'>
+        <img src="{avatar_url}" alt="{player}" loading="lazy"/>
+      </div>
+      <div class='row' style='margin-top:5px;'>{flag}<span class='chip'>{age_txt}</span></div>
+      <div class='row'><span class='chip'>{mins_txt}</span></div>
+      <div class='row'><span class='chip'>{foot}</span></div>
+      <div class='row'><span class='chip'>{contract_txt}</span></div>
+    </div>
+    <div>
+      <div class='name'>{player}</div>
+      {pills_html}
+      <div class='row' style='margin-top:10px;'>{pos_html}</div>
+      {teamline_html}
+    </div>
+    <div class='rank'>#{i+1:02d}</div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+            # Individual Metrics expander
+            atts, defs, poss = _GROUP_METRICS.get(group_label, (_ATT_METRICS, _DEF_METRICS, _POS_METRICS))
+            with st.expander("Individual Metrics", expanded=False):
+                sections = []
+                s1 = _sec_html_v2("ATTACKING" if group_label != "GK" else "GOALKEEPING", atts, df_merged, row)
+                s2 = _sec_html_v2("DEFENSIVE" if group_label != "GK" else "POSSESSION", defs, df_merged, row)
+                s3 = _sec_html_v2("POSSESSION", poss, df_merged, row) if poss else ""
+                sections = [s for s in [s1, s2, s3] if s]
+                if sections:
+                    st.markdown(
+                        "<div class='metrics-grid'>" + "".join(sections) + "</div>",
+                        unsafe_allow_html=True
+                    )
+                else:
+                    st.caption("No percentile data available for this player.")
+
+    if not rendered_any:
+        st.info("No players found for this team.")
+
+# ── Badge loaders ─────────────────────────────────────────────────────────────
 _FOTMOB_URLS = {}
 for _badges_mod in ("badges", "team_fotmob_urls", "fotmob_urls"):
     try:
         _m = __import__(_badges_mod)
-        # badges.py may expose FOTMOB_TEAM_URLS or TEAM_URLS or a dict at module level
         _FOTMOB_URLS = (
             getattr(_m, "FOTMOB_TEAM_URLS", None)
             or getattr(_m, "TEAM_URLS", None)
@@ -750,13 +1309,10 @@ def load_remote_img(url):
 def fotmob_crest_url(team):
     raw = (_FOTMOB_URLS.get(team) or "").strip()
     if not raw: return ""
-    # Already a direct image URL (e.g. from badges.py storing .png links directly)
     if raw.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".svg")):
         return raw
-    # Fotmob team page URL — extract team ID
     m = re.search(r"/teams/(\d+)/", raw)
     if m: return f"https://images.fotmob.com/image_resources/logo/teamlogo/{m.group(1)}.png"
-    # Fotmob image URL with teamlogo path already
     if "teamlogo" in raw or "fotmob.com" in raw:
         return raw
     return ""
@@ -805,7 +1361,6 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("**TEAM STATS CSV**")
 
-    # Auto-detect CSVs in working directory
     csv_candidates=sorted(Path.cwd().glob("*.csv"),key=lambda c:c.name)
     if csv_candidates:
         _csv_names=[c.name for c in csv_candidates]
@@ -822,11 +1377,7 @@ with st.sidebar:
 
     st.markdown("**PLAYER CSV (for squad)**")
 
-    # ── Flexible player CSV column normalisation ──────────────────────────────
-    # Wyscout exports use various column name styles. This maps them all to the
-    # standard names the squad depth chart expects.
     PLAYER_COL_MAP = {
-        # Standard name : list of possible raw names (lowercase, stripped)
         "Player":         ["player","full name","name","player name","player_name"],
         "Team":           ["team","club","team name","club name"],
         "League":         ["league","competition","league name"],
@@ -855,24 +1406,18 @@ with st.sidebar:
         rename = {}
         for standard, aliases in PLAYER_COL_MAP.items():
             if standard in df.columns:
-                continue  # already correct
+                continue
             for alias in aliases:
                 if alias in col_lower:
                     rename[col_lower[alias]] = standard
                     break
         df = df.rename(columns=rename)
-
-        # Strip whitespace from key string columns
         for c in ["Player", "Team", "Position", "League"]:
             if c in df.columns:
                 df[c] = df[c].astype(str).str.strip()
-
-        # Coerce numeric columns
         for c in ["Minutes played", "Goals", "Assists", "Age", "xG", "xA"]:
             if c in df.columns:
                 df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
-
-        # Require Player and Position — raise a clear error if still missing
         missing = [c for c in ["Player", "Position"] if c not in df.columns]
         if missing:
             available = ", ".join(df.columns.tolist())
@@ -880,12 +1425,9 @@ with st.sidebar:
                 f"Could not find columns {missing} in player CSV. "
                 f"Available columns: {available}"
             )
-
-        # Ensure Team and League exist (can be empty if single-team upload)
         for c in ["Team", "League"]:
             if c not in df.columns:
                 df[c] = ""
-
         df["_ftok"] = df["Position"].apply(_tok)
         df["_key"]  = df["Player"]
         return df
@@ -967,7 +1509,6 @@ for c in NUMERIC_COLS:
 if "Matches" in df_team_raw.columns:
     df_team_raw=df_team_raw[pd.to_numeric(df_team_raw["Matches"],errors="coerce").fillna(0)>=min_matches]
 
-# ── Percentile ranks ──────────────────────────────────────────────────────────
 df_team=df_team_raw.copy()
 def score_col(name): return f"_pct_{name}"
 
@@ -1014,7 +1555,6 @@ df_team["POS"]=df_team.apply(compute_possession,axis=1)
 if df_team.empty:
     st.warning("No teams in data after filters."); st.stop()
 
-# ── Team selector ─────────────────────────────────────────────────────────────
 all_leagues=sorted(df_team["League"].dropna().unique()) if "League" in df_team.columns else []
 
 with st.sidebar:
@@ -1039,9 +1579,6 @@ with st.sidebar:
     st.markdown("**SQUAD FORMATION**")
     formation=st.selectbox("Formation",list(FORMATIONS.keys()),key="sb_formation")
 
-# ─────────────────────────────────────────────────────────────────────────────
-# GET TEAM ROW
-# ─────────────────────────────────────────────────────────────────────────────
 team_df_rows=df_team[df_team["Team"]==sel_team]
 if team_df_rows.empty: st.warning(f"'{sel_team}' not found."); st.stop()
 t_row=team_df_rows.iloc[0]
@@ -1056,9 +1593,6 @@ def _s(v):
     try: return int(round(float(v)))
     except: return "—"
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# HEADER — Team Name, League, Scores
-# ═══════════════════════════════════════════════════════════════════════════════
 import base64
 
 flag=flag_html(t_league)
@@ -1070,7 +1604,6 @@ def _img_to_b64(img_array):
 
 @st.cache_data(show_spinner=False)
 def _fetch_b64_url(url: str) -> str:
-    """Download any image URL server-side and return a base64 data URI (bypasses browser CSP)."""
     if not url: return ""
     try:
         r = requests.get(url, timeout=8); r.raise_for_status()
@@ -1079,7 +1612,6 @@ def _fetch_b64_url(url: str) -> str:
         return f"data:{mime};base64,{b64}"
     except: return ""
 
-# ── Club badge HTML ───────────────────────────────────────────────────────────
 if badge_img is not None:
     badge_html_header=(f'<img src="data:image/png;base64,{_img_to_b64(badge_img)}" '
                        f'style="width:80px;height:80px;object-fit:contain;border-radius:8px;"/>')
@@ -1093,14 +1625,12 @@ else:
         badge_html_header=('<div style="width:80px;height:80px;background:#111827;border-radius:8px;'
                            'display:flex;align-items:center;justify-content:center;font-size:32px;">🏟️</div>')
 
-# ── League logo HTML — fetched server-side so base64 data URI bypasses CSP ───
 _league_logo_url = _get_league_logo_url(t_league)
 _league_logo_b64 = _fetch_b64_url(_league_logo_url) if _league_logo_url else ""
 league_logo_html = (f'<img src="{_league_logo_b64}" '
                     f'style="height:32px;width:32px;object-fit:contain;vertical-align:middle;'
                     f'margin-right:6px;border-radius:3px;"/>') if _league_logo_b64 else ""
 
-# Build header HTML
 def score_chip(label,val):
     bg=rating_color(val) if not (isinstance(val,float) and np.isnan(val)) else "#1a2035"
     fg="#000" if not (isinstance(val,float) and np.isnan(val)) and float(val)>=44 else "#fff"
@@ -1115,11 +1645,7 @@ st.markdown(f"""
 <div style="background:#0f1628;border:1px solid #1e2d4a;border-radius:16px;
             padding:24px 28px;margin-bottom:24px;display:flex;align-items:center;gap:24px;
             flex-wrap:wrap;">
-
-  <!-- Club badge -->
   <div style="flex-shrink:0;">{badge_html_header}</div>
-
-  <!-- Name + league meta -->
   <div style="flex:1;min-width:200px;">
     <div style="font-family:Montserrat,sans-serif;font-size:34px;font-weight:900;
                 color:#fff;letter-spacing:.03em;line-height:1.1;">{sel_team.upper()}</div>
@@ -1132,8 +1658,6 @@ st.markdown(f"""
       <span>{t_region}</span>
     </div>
   </div>
-
-  <!-- Score chips -->
   <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end;">
     {score_chip("Overall",ovr)}
     {score_chip("Attack",att)}
@@ -1144,7 +1668,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# FEATURE Y — POLAR RADAR
+# POLAR RADAR
 # ═══════════════════════════════════════════════════════════════════════════════
 st.markdown('<div style="font-size:11px;font-weight:900;letter-spacing:.18em;color:#6b7280;'
             'text-transform:uppercase;margin-bottom:10px;">Squad Performance Radar</div>',
@@ -1216,7 +1740,7 @@ with col_radar:
     plt.close(fig_y)
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# STYLE / STRENGTHS / WEAKNESSES  (right column alongside radar)
+# STYLE / STRENGTHS / WEAKNESSES
 # ═══════════════════════════════════════════════════════════════════════════════
 def _op_pct(col,invert=False):
     if col not in pool_y.columns: return 0.0
@@ -1268,7 +1792,6 @@ def chips(items,bg,label):
         for t in list(dict.fromkeys(items))[:8])
     return f'<div style="margin-bottom:8px;">{spans}</div>'
 
-# Key stats — use a table for perfect column alignment
 _stats_rows=""
 for lbl,col,inv in [("xG","xG p90",False),("xGA","xG Against p90",True),
                     ("Poss","Possession %",False),("PPDA","PPDA",True),
@@ -1288,7 +1811,6 @@ for lbl,col,inv in [("xG","xG p90",False),("xGA","xG Against p90",True),
 _stats_html=(f'<table style="width:100%;border-collapse:collapse;">{_stats_rows}</table>'
              if _stats_rows else "")
 
-# League position
 def _lg_pos(row,df_all,metric,asc=False):
     lg=row.get("League","")
     if not lg or metric not in df_all.columns: return None,None
@@ -1319,7 +1841,6 @@ with col_info:
     ({_xpts_str})
   </div>
   {_stats_html}
-
   <div style="margin-top:14px;">
     <div style="font-size:10px;font-weight:900;letter-spacing:.14em;color:#6b7280;text-transform:uppercase;margin-bottom:6px;">Style</div>
     {chips(styles,"#3b82f6","Style")}
@@ -1342,10 +1863,8 @@ st.markdown('<div style="font-size:11px;font-weight:900;letter-spacing:.18em;col
 if df_players is None:
     st.info("Upload a player CSV in the sidebar to see the squad depth chart.")
 else:
-    # Find team in player data — try exact match, then fuzzy
     _team_players=df_players[df_players["Team"]==sel_team]
     if _team_players.empty:
-        # Try partial match
         _tm=sel_team.lower()
         _match=df_players[df_players["Team"].str.lower().str.contains(_tm[:8],na=False)]
         if not _match.empty:
@@ -1353,16 +1872,13 @@ else:
             _team_players=df_players[df_players["Team"]==_actual_team]
 
     if _team_players.empty:
-        st.info(f"No squad data found for **{sel_team}** in the player CSV. "
-                f"Check that the Team name matches exactly.")
+        st.info(f"No squad data found for **{sel_team}** in the player CSV.")
     else:
         sq_min_mins=st.session_state.get("sq_minmins_val",0)
-
         _tp_filt=_team_players[_team_players["Minutes played"]>=sq_min_mins].copy()
         _tp_filt["_key"]=_tp_filt["Player"]
         players_list=_tp_filt.to_dict("records")
 
-        # Build / cache slot assignment
         _cache_key=(sel_team,formation,sq_min_mins)
         if st.session_state.get("_squad_cache_key")!=_cache_key:
             _sm,_dep=assign_players(players_list,formation)
@@ -1395,7 +1911,6 @@ else:
             st.session_state["_squad_cache_key"]=_cache_key
             st.rerun()
 
-        # Full squad table
         with st.expander("📋 Full Squad"):
             show_c=[c for c in ["Player","Position","Minutes played","Goals","Assists",
                                  "Market value","Contract expires","Age"] if c in _tp_filt.columns]
@@ -1403,6 +1918,33 @@ else:
                 _tp_filt[show_c].sort_values("Minutes played",ascending=False).reset_index(drop=True),
                 use_container_width=True
             )
+
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PRO LAYOUT SECTION
+# ═══════════════════════════════════════════════════════════════════════════════
+st.markdown("---")
+st.markdown('<div style="font-size:11px;font-weight:900;letter-spacing:.18em;color:#6b7280;'
+            'text-transform:uppercase;margin-bottom:10px;">Pro Layout</div>',
+            unsafe_allow_html=True)
+
+if df_players is None:
+    st.info("Upload a player CSV in the sidebar to see the Pro Layout.")
+else:
+    _pro_players = df_players[df_players["Team"] == sel_team]
+    if _pro_players.empty:
+        _tm = sel_team.lower()
+        _match = df_players[df_players["Team"].str.lower().str.contains(_tm[:8], na=False)]
+        if not _match.empty:
+            _pro_players = df_players[df_players["Team"] == _match["Team"].iloc[0]]
+
+    if _pro_players.empty:
+        st.info(f"No squad data found for **{sel_team}** in the player CSV.")
+    else:
+        sq_min_mins = st.session_state.get("sq_minmins_val", 0)
+        _pro_filt = _pro_players[_pro_players["Minutes played"] >= sq_min_mins].copy()
+        render_pro_layout_v2(_pro_filt, df_players_sc)
 
 st.markdown("---")
 st.caption("TEAM HQ + SQUAD · Wyscout data · Percentile ranks computed within league pool")

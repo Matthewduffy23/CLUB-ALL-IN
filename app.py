@@ -700,6 +700,39 @@ import unicodedata as _ud2
 import re as _re2
 from difflib import SequenceMatcher as _SM
 
+# ── FotMob URL map (loads from team_fotmob_urls.py if present) ────────────────
+_FOTMOB_URLS = {}
+for _badges_mod in ("badges", "team_fotmob_urls", "fotmob_urls"):
+    try:
+        _m = __import__(_badges_mod)
+        _FOTMOB_URLS = (
+            getattr(_m, "FOTMOB_TEAM_URLS", None)
+            or getattr(_m, "TEAM_URLS", None)
+            or getattr(_m, "BADGES", None)
+            or {}
+        )
+        break
+    except Exception:
+        pass
+
+# ── League logo URL helper (loads from leaguelogos.py if present) ─────────────
+_get_league_logo_url = lambda lg: ""
+for _logos_mod in ("leaguelogos", "league_logo_urls", "league_logos"):
+    try:
+        _m = __import__(_logos_mod)
+        if hasattr(_m, "get_league_logo_url"):
+            _get_league_logo_url = _m.get_league_logo_url
+        elif hasattr(_m, "LEAGUE_LOGO_URLS"):
+            import unicodedata as _ud
+            def _norm_key(s):
+                s = _ud.normalize("NFKD", str(s)).encode("ascii", "ignore").decode("ascii")
+                return " ".join(s.strip().lower().split())
+            _LL = {_norm_key(k): str(v).strip() for k, v in _m.LEAGUE_LOGO_URLS.items() if str(v).strip()}
+            _get_league_logo_url = lambda lg, _ll=_LL: _ll.get(_norm_key(lg), "")
+        break
+    except Exception:
+        pass
+
 _POS_COLORS_PRO = {
     "CF":"#6EA8FF","LWF":"#6EA8FF","RWF":"#6EA8FF","LW":"#6EA8FF","RW":"#6EA8FF",
     "LAMF":"#6EA8FF","RAMF":"#6EA8FF","AMF":"#7FE28A",

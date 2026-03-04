@@ -5,6 +5,7 @@
 import io, os, re, math, unicodedata
 from pathlib import Path
 from datetime import date
+from difflib import SequenceMatcher
 
 import streamlit as st
 import pandas as pd
@@ -692,15 +693,14 @@ document.fonts.ready.then(function(){{
 </script></body></html>"""
 
 
-
 # ═══════════════════════════════════════════════════════════════════════════════
-# PRO LAYOUT HELPERS (flags, foot, photo resolver, chip colors)
+# PRO LAYOUT HELPERS
 # ═══════════════════════════════════════════════════════════════════════════════
 import unicodedata as _ud2
 import re as _re2
 from difflib import SequenceMatcher as _SM
 
-# ── FotMob URL map (loads from team_fotmob_urls.py if present) ────────────────
+# ── FotMob URL map ────────────────────────────────────────────────────────────
 _FOTMOB_URLS = {}
 for _badges_mod in ("badges", "team_fotmob_urls", "fotmob_urls"):
     try:
@@ -715,7 +715,7 @@ for _badges_mod in ("badges", "team_fotmob_urls", "fotmob_urls"):
     except Exception:
         pass
 
-# ── League logo URL helper (loads from leaguelogos.py if present) ─────────────
+# ── League logo URL helper ────────────────────────────────────────────────────
 _get_league_logo_url = lambda lg: ""
 for _logos_mod in ("leaguelogos", "league_logo_urls", "league_logos"):
     try:
@@ -773,7 +773,7 @@ _COUNTRY_TO_CC = {
     "palestine":"ps","hong kong":"hk","curacao":"cw","curaçao":"cw",
 }
 
-def _norm(s: str) -> str:
+def _norm_str(s: str) -> str:
     if not s: return ""
     return _ud2.normalize("NFKD", str(s)).encode("ascii","ignore").decode("ascii").strip().lower()
 
@@ -784,7 +784,7 @@ def _cc_to_twemoji(cc):
 
 def _flag_html(country_name: str) -> str:
     if not country_name: return "<span class=\"chip\">—</span>"
-    n = _norm(country_name)
+    n = _norm_str(country_name)
     cc = _COUNTRY_TO_CC.get(n, "")
     if not cc: return "<span class=\"chip\">—</span>"
     if cc in _TWEMOJI_SPECIAL:
@@ -808,18 +808,27 @@ def _get_foot(row) -> str:
             if s and s.lower() not in {"nan","none","null"}: return s
     return ""
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# FIXED PHOTO RESOLUTION — robust slug + fuzzy matching (same as attacker app)
+# ═══════════════════════════════════════════════════════════════════════════════
+
 def _slug_name(s: str) -> str:
+    """Accent-robust slug: handles ø, æ, å, ä, ö, ü, ß, ł, ç, ş, ğ, ı, đ, ð etc."""
     if not s: return ""
     s = str(s).strip().lower()
-    for k,v in {"ø":"o","æ":"ae","å":"a","ä":"a","ö":"o","ü":"u","ß":"ss","ł":"l","ç":"c","ş":"s","ğ":"g"}.items():
+    for k, v in {
+        "ø":"o","œ":"oe","æ":"ae","å":"a","ä":"a","ö":"o","ü":"u",
+        "ß":"ss","ł":"l","đ":"d","ð":"d","þ":"th","ç":"c",
+        "ş":"s","ğ":"g","ı":"i",
+    }.items():
         s = s.replace(k, v)
-    s = _ud2.normalize("NFKD", s)
-    s = "".join(c for c in s if not _ud2.combining(c))
-    return _re2.sub(r"[^a-z0-9]+", "", s)
+    s = unicodedata.normalize("NFKD", s)
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    return re.sub(r"[^a-z0-9]+", "", s)
 
 def _slug_surname(player: str) -> str:
     p = (player or "").strip()
-    if "," in p: return _slug_name(p.split(",",1)[0].strip())
+    if "," in p: return _slug_name(p.split(",", 1)[0].strip())
     parts = p.split()
     return _slug_name(parts[-1]) if parts else ""
 
@@ -843,7 +852,6 @@ def _fotmob_squad_cached(team_id: str) -> list:
                     members = raw_squad.get(k)
                     if isinstance(members, list):
                         squad.extend([m for m in members if isinstance(m, dict)])
-                # nested squad.squad list
                 nested = raw_squad.get("squad")
                 if isinstance(nested, list):
                     for section in nested:
@@ -859,8 +867,13 @@ def _get_fotmob_url(team: str) -> str:
     return (_FOTMOB_URLS.get(team) or "").strip()
 
 def resolve_player_photo(player, team, league, key_id, session_photo_map, global_overrides):
+    """
+    Resolve a FotMob player photo URL using robust accent-tolerant slug matching
+    with exact surname, full-name contains, and fuzzy fallback (threshold 0.82).
+    """
     if session_photo_map.get(key_id): return session_photo_map[key_id]
     if global_overrides.get(key_id): return global_overrides[key_id]
+
     team_url = _get_fotmob_url(team)
     tid_m = re.search(r"/teams/(\d+)/", team_url or "")
     if tid_m:
@@ -868,7 +881,8 @@ def resolve_player_photo(player, team, league, key_id, session_photo_map, global
         target_surname = _slug_name(_slug_surname(player))
         target_full    = _slug_name(player)
         best_id = ""
-        # 1) exact surname
+
+        # 1) Exact surname match — prefer full-name hit within that set
         if target_surname:
             for m in squad:
                 name = m.get("name") or m.get("playerName") or ""
@@ -876,15 +890,18 @@ def resolve_player_photo(player, team, league, key_id, session_photo_map, global
                 if not pid: continue
                 if _slug_name(_slug_surname(name)) == target_surname:
                     best_id = pid
-                    if target_full and target_full in _slug_name(name): break
-        # 2) full name contains
+                    if target_full and target_full in _slug_name(name):
+                        break  # perfect match, stop early
+
+        # 2) Full slug of player name contained in squad member slug
         if not best_id and target_full:
             for m in squad:
                 name = m.get("name") or m.get("playerName") or ""
                 pid  = str(m.get("id") or m.get("playerId") or m.get("primaryId") or "")
                 if pid and target_full in _slug_name(name):
                     best_id = pid; break
-        # 3) fuzzy surname fallback
+
+        # 3) Fuzzy surname fallback — lower threshold (0.82) catches lower-league names
         if not best_id and target_surname:
             bsc, bpid = 0.0, ""
             for m in squad:
@@ -893,450 +910,15 @@ def resolve_player_photo(player, team, league, key_id, session_photo_map, global
                 if not pid: continue
                 sc = _SM(None, _slug_name(_slug_surname(name)), target_surname).ratio()
                 if sc > bsc: bsc, bpid = sc, pid
-            if bsc >= 0.86: best_id = bpid
+            if bsc >= 0.82:
+                best_id = bpid
+
         if best_id and str(best_id).isdigit():
             url = f"https://images.fotmob.com/image_resources/playerimages/{best_id}.png"
             session_photo_map[key_id] = url
             return url
+
     return "https://i.redd.it/43axcjdu59nd1.jpeg"
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# PRO LAYOUT
-# ═══════════════════════════════════════════════════════════════════════════════
-# Position groups displayed attack → defence. Each tuple: (display label, list of raw position tokens)
-# ═══════════════════════════════════════════════════════════════════════════════
-# PRO LAYOUT  — interactive Streamlit cards, grouped attack→defence, sorted by minutes
-# ═══════════════════════════════════════════════════════════════════════════════
-
-# Position groups (attack → defence). Each player's PRIMARY token is matched.
-PRO_LAYOUT_GROUPS = [
-    ("CF / ST",  ["CF","LWF","RWF"]),
-    ("AM / W",   ["AMF","LAMF","RAMF","LW","RW"]),
-    ("CM",       ["LCMF","RCMF","CMF"]),
-    ("DM",       ["DMF","LDMF","RDMF"]),
-    ("FB",       ["LB","RB","LWB","RWB"]),
-    ("CB",       ["CB","LCB","RCB"]),
-    ("GK",       ["GK"]),
-]
-
-# Role pills per group  →  list of (score_col, display_label)
-_GROUP_ROLES = {
-    "CF / ST": [
-        ("_rs_Goal Threat CF",  "Goal Threat CF"),
-        ("_rs_Link Up CF",      "Link-Up CF"),
-        ("_rs_Target Man CF",   "Target Man CF"),
-    ],
-    "AM / W": [
-        ("_rs_Goal Threat ATT", "Goal Threat"),
-        ("_rs_Playmaker ATT",   "Playmaker"),
-        ("_rs_Ball Carrier ATT","Ball Carrier"),
-    ],
-    "CM": [
-        ("_rs_Defensive CM",          "Defensive CM"),
-        ("_rs_Advanced Playmaker CM", "Advanced Playmaker CM"),
-        ("_rs_Deep Playmaker CM",     "Deep Playmaker CM"),
-    ],
-    "DM": [
-        ("_rs_Defensive CM",      "Defensive CM"),
-        ("_rs_Deep Playmaker CM", "Deep Playmaker CM"),
-        ("_rs_Ball Carrying CM",  "Ball Carrying CM"),
-    ],
-    "FB": [
-        ("_rs_Build Up FB",   "Build Up FB"),
-        ("_rs_Attacking FB",  "Attacking FB"),
-        ("_rs_Defensive FB",  "Defensive FB"),
-    ],
-    "CB": [
-        ("_rs_Ball Playing CB", "Ball Playing CB"),
-        ("_rs_Wide CB",         "Wide CB"),
-        ("_rs_Box Defender",    "Box Defender"),
-    ],
-    "GK": [
-        ("_rs_Shot Stopper GK", "Shot Stopper GK"),
-        ("_rs_Ball Playing GK", "Ball Playing GK"),
-        ("_rs_Sweeper GK",      "Sweeper GK"),
-    ],
-}
-
-# Individual metric dropdowns per group: (display_label, raw_column)
-_ATT_METRICS = [
-    ("Crosses",               "Crosses per 90"),
-    ("Crossing Acc %",        "Accurate crosses, %"),
-    ("Goals (NP)",            "Non-penalty goals per 90"),
-    ("xG",                    "xG per 90"),
-    ("Conversion %",          "Goal conversion, %"),
-    ("xA",                    "xA per 90"),
-    ("Progressive Runs",      "Progressive runs per 90"),
-    ("Shots",                 "Shots per 90"),
-    ("Shot Acc %",            "Shots on target, %"),
-    ("Box Touches",           "Touches in box per 90"),
-]
-_DEF_METRICS = [
-    ("Aerial Duels",          "Aerial duels per 90"),
-    ("Aerial %",              "Aerial duels won, %"),
-    ("Def. Duels",            "Defensive duels per 90"),
-    ("Def. Duel %",           "Defensive duels won, %"),
-    ("PAdj Interceptions",    "PAdj Interceptions"),
-    ("Shots Blocked",         "Shots blocked per 90"),
-]
-_POS_METRICS = [
-    ("Accelerations",         "Accelerations per 90"),
-    ("Deep Completions",      "Deep completions per 90"),
-    ("Dribbles",              "Dribbles per 90"),
-    ("Dribble %",             "Successful dribbles, %"),
-    ("Fwd Passes",            "Forward passes per 90"),
-    ("Fwd Pass %",            "Accurate forward passes, %"),
-    ("Long Passes",           "Long passes per 90"),
-    ("Long Pass %",           "Accurate long passes, %"),
-    ("Key Passes",            "Key passes per 90"),
-    ("Passes",                "Passes per 90"),
-    ("Pass %",                "Accurate passes, %"),
-    ("Passes to F3rd",        "Passes to final third per 90"),
-    ("Passes to F3rd %",      "Accurate passes to final third, %"),
-    ("Passes to Box",         "Passes to penalty area per 90"),
-    ("Passes to Box %",       "Accurate passes to penalty area, %"),
-    ("Prog. Passes",          "Progressive passes per 90"),
-    ("Prog. Pass %",          "Accurate progressive passes, %"),
-    ("Smart Passes",          "Smart passes per 90"),
-]
-_GK_METRICS = [
-    ("Exits",                 "Exits per 90"),
-    ("Goals Prevented",       "Prevented goals per 90"),
-    ("Goals Conceded",        "Conceded goals per 90"),
-    ("Save Rate %",           "Save rate, %"),
-    ("Shots Against",         "Shots against per 90"),
-    ("xG Against",            "xG against per 90"),
-]
-_GK_POS_METRICS = [
-    ("Long Passes",           "Long passes per 90"),
-    ("Long Pass %",           "Accurate long passes, %"),
-    ("Passes",                "Passes per 90"),
-    ("Pass %",                "Accurate passes, %"),
-]
-
-_GROUP_METRICS = {
-    "CF / ST": (_ATT_METRICS,   _DEF_METRICS,   _POS_METRICS),
-    "AM / W":  (_ATT_METRICS,   _DEF_METRICS,   _POS_METRICS),
-    "CM":      (_ATT_METRICS,   _DEF_METRICS,   _POS_METRICS),
-    "DM":      (_ATT_METRICS,   _DEF_METRICS,   _POS_METRICS),
-    "FB":      (_ATT_METRICS,   _DEF_METRICS,   _POS_METRICS),
-    "CB":      (_ATT_METRICS,   _DEF_METRICS,   _POS_METRICS),
-    "GK":      (_GK_METRICS,    _GK_POS_METRICS, []),
-}
-
-
-def _pro_rating_color_v2(v: float) -> str:
-    v = float(v)
-    for thr, col in [(85,"#2E6114"),(75,"#5C9E2E"),(66,"#7FBC41"),
-                     (55,"#A7D763"),(41,"#F6D645"),(25,"#D77A2E"),(0,"#C63733")]:
-        if v >= thr:
-            return col
-    return "#C63733"
-
-def _show99(x) -> int:
-    try: return max(0, min(99, int(float(x))))
-    except: return 0
-
-def _f2(n) -> str:
-    try: return f"{int(n):02d}"
-    except: return "00"
-
-def _metric_pct_v2(row, met):
-    col = f"{met} Percentile"
-    if col in row.index:
-        try:
-            v = float(row[col])
-            if not np.isnan(v): return v
-        except: pass
-    return np.nan
-
-def _metric_val_v2(row, met):
-    if met in row.index:
-        try:
-            v = float(row[met])
-            if not np.isnan(v): return v
-        except: pass
-    return np.nan
-
-def _avail_pairs(df, pairs):
-    out = []
-    for lab, met in pairs:
-        if met in df.columns or f"{met} Percentile" in df.columns:
-            out.append((lab, met))
-    return out
-
-def _sec_html_v2(title, pairs, df_view, row):
-    pairs = _avail_pairs(df_view, pairs)
-    rows = []
-    for lab, met in pairs:
-        pct  = _metric_pct_v2(row, met)
-        p    = _show99(pct if not np.isnan(pct) else 0.0)
-        rawv = _metric_val_v2(row, met)
-        rtxt = "—" if np.isnan(rawv) else f"{rawv:.2f}".rstrip("0").rstrip(".")
-        rows.append(
-            "<div class=\"m-row\">"
-            f"<div class=\"m-label\">{lab}</div>"
-            "<div class=\"m-right\">"
-            f"<div class=\"m-val\">{rtxt}</div>"
-            f"<div class=\"m-badge\" style=\"background:{_pro_rating_color_v2(p)}\">{_f2(p)}</div>"
-            "</div></div>"
-        )
-    if not rows:
-        return ""
-    return f"<div class=\"m-sec\"><div class=\"m-title\">{title}</div>{''.join(rows)}</div>"
-
-
-_PRO_CSS = """
-<style>
-:root { --card:#141823; }
-.pro-wrap{ display:flex; justify-content:center; }
-.pro-card{
-  position:relative; width:min(420px,96%);
-  display:grid; grid-template-columns:96px 1fr 48px;
-  gap:12px; align-items:start;
-  background:var(--card); border:1px solid rgba(255,255,255,.06);
-  border-radius:20px; padding:16px; margin-bottom:12px;
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.03), 0 6px 24px rgba(0,0,0,.35);
-}
-.pro-avatar{ width:96px; height:96px; border-radius:12px; border:1px solid #2a3145; overflow:hidden; background:#0b0d12; }
-.pro-avatar img{ width:100%; height:100%; object-fit:cover; image-rendering:auto; transform:translateZ(0); }
-.flagchip{ display:inline-flex; align-items:center; gap:6px; background:transparent; border:none; padding:0; height:auto; }
-.flagchip img{ width:26px; height:18px; border-radius:2px; display:block; }
-.chip{ background:transparent; color:#a6a6a6; border:none; padding:0; border-radius:0; font-size:15px; line-height:18px; opacity:.92; }
-.row{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:2px 0; }
-.leftrow1{ margin-top:6px; } .leftrow-foot{ margin-top:2px; } .leftrow-contract{ margin-top:10px; }
-.pill{
-  min-width:36px; height:28px; padding:0 8px; border-radius:6px;
-  display:inline-flex; align-items:center; justify-content:center;
-  font-weight:800; font-size:18px; color:#0b0d12; box-sizing:border-box;
-}
-.name{ font-weight:800; font-size:22px; color:#e8ecff; margin-bottom:6px; letter-spacing:.2px; line-height:1.15; }
-.sub{ color:#a8b3cf; font-size:15px; opacity:.9; }
-.posrow{ margin-top:13.5px; }
-.postext{ font-weight:600; font-size:14.5px; letter-spacing:.2px; margin-right:11px; }
-.rank{ position:absolute; top:10.5px; right:14px; color:#b7bfe1; font-weight:800; font-size:18px; text-align:right; pointer-events:none; }
-.teamline{ color:#dbe3ff; font-size:14px; font-weight:600; margin-top:6.5px; letter-spacing:.05px; opacity:.95; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.tl-wrap{ position:relative; } .tl-has-crest{ padding-left:24px; }
-.crest-icon{ height:1.35em; width:auto; object-fit:contain; image-rendering:auto; }
-.crest-abs{ position:absolute; left:0; top:50%; transform:translateY(-50%); pointer-events:none; }
-.grp-header{
-  font-size:9px; font-weight:900; letter-spacing:.18em; color:#ef4444;
-  text-transform:uppercase; margin:18px 0 8px 0;
-  border-left:3px solid #ef4444; padding-left:8px;
-}
-.m-sec{ background:#121621; border:1px solid #242b3b; border-radius:14px; padding:9px 11px; }
-.m-title{ color:#e8ecff; font-weight:800; letter-spacing:.02em; margin:4px 0 8px 0; font-size:12px; }
-.m-row{ display:flex; align-items:center; gap:8px; padding:6px 6px; border-radius:8px; }
-.m-label{ color:#c9d3f2; font-size:14.5px; flex:1 1 0%; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.m-right{ display:flex; align-items:center; gap:8px; flex:0 0 auto; }
-.m-val{ color:#a8b3cf; font-size:12px; opacity:.9; min-width:48px; text-align:right; }
-.m-badge{ min-width:40px; text-align:center; padding:2px 9px; border-radius:7px; font-weight:800; font-size:17px; color:#0b0d12; }
-.metrics-grid{ display:grid; grid-template-columns:1fr; gap:10px; }
-@media (min-width:720px){ .metrics-grid{ grid-template-columns:repeat(3,1fr); } }
-</style>
-"""
-
-def render_pro_layout_v2(team_players_df: pd.DataFrame, df_sc, df_full: pd.DataFrame = None):
-    st.markdown(_PRO_CSS, unsafe_allow_html=True)
-    st.session_state.setdefault("photo_map", {})
-    st.session_state.setdefault("crest_map", {})
-
-    # ── Position group lookup ─────────────────────────────────────────────
-    _TOK_TO_GRP = {t: lbl for lbl, toks in PRO_LAYOUT_GROUPS for t in toks}
-    def _player_grp(pos_str):
-        return _TOK_TO_GRP.get(_tok(str(pos_str)), "CM")
-
-    # ── Metric columns we need percentiles for ────────────────────────────
-    ALL_MET = list({met for _, met in
-        _ATT_METRICS + _DEF_METRICS + _POS_METRICS + _GK_METRICS + _GK_POS_METRICS})
-
-    # ── Compute percentiles: per (league, pos-group) from full CSV ─────────
-    @st.cache_data(show_spinner=False)
-    def _build_ref(df_raw: pd.DataFrame) -> pd.DataFrame:
-        df = df_raw.copy()
-        df["_grp"] = df["Position"].apply(_player_grp)
-        for met in ALL_MET:
-            if met not in df.columns:
-                continue
-            df[met] = pd.to_numeric(df[met], errors="coerce")
-            pct_col = f"{met} Percentile"
-            df[pct_col] = np.nan
-            for (lg, grp), idx in df.groupby(["League", "_grp"]).groups.items():
-                pool = df.loc[idx, met].dropna()
-                if pool.empty:
-                    continue
-                ranks = pool.rank(pct=True, method="average") * 100.0
-                df.loc[ranks.index, pct_col] = ranks
-        return df
-
-    ref_src = df_full if (df_full is not None and not df_full.empty) else \
-              df_sc   if (df_sc   is not None and not df_sc.empty)   else \
-              team_players_df
-    df_ref = _build_ref(ref_src)
-
-    # ── Build team list: deduplicate, sort by minutes ─────────────────────
-    df_team = team_players_df.drop_duplicates(subset=["Player", "Team"]).copy()
-    mins_col = "Minutes played"
-    if mins_col in df_team.columns:
-        df_team[mins_col] = pd.to_numeric(df_team[mins_col], errors="coerce")
-        df_team = df_team.sort_values(mins_col, ascending=False)
-    df_team = df_team.reset_index(drop=True)
-
-    if df_team.empty:
-        st.info("No players found for this team.")
-        return
-
-    # ── Role score from df_ref percentiles ────────────────────────────────
-    def _role_score_from_ref(player, team, metrics: dict) -> float:
-        mask = (df_ref["Player"] == player) & (df_ref["Team"] == team)
-        hits = df_ref[mask]
-        if hits.empty:
-            return 0.0
-        r = hits.iloc[0]
-        total_w, wsum = 0.0, 0.0
-        for met, w in metrics.items():
-            pct_col = f"{met} Percentile"
-            if pct_col in r.index and pd.notna(r[pct_col]):
-                wsum += float(r[pct_col]) * w
-                total_w += w
-        return (wsum / total_w) if total_w > 0 else 0.0
-
-    for rank_i, (_, row) in enumerate(df_team.iterrows(), start=1):
-        player  = str(row.get("Player", "") or "")
-        team    = str(row.get("Team",   "") or "")
-        league  = str(row.get("League", "") or "")
-        pos     = str(row.get("Position", "") or "")
-        grp     = _player_grp(pos)
-
-        try:    mins = int(float(row.get(mins_col) or 0))
-        except: mins = 0
-        mins_txt = f"{mins}\u2032"
-
-        try:    age_val = int(float(row.get("Age") or 0)) if pd.notna(row.get("Age", np.nan)) else 0
-        except: age_val = 0
-        age_txt = f"{age_val}y.o." if age_val > 0 else "\u2014"
-
-        cy  = pd.to_datetime(row.get("Contract expires"), errors="coerce")
-        cyr = int(cy.year) if pd.notna(cy) else 0
-        contract_txt = str(cyr) if cyr > 0 else "\u2014"
-
-        birth = str(row.get("Birth country", "") or "")
-        foot  = _get_foot(row) or "\u2014"
-        flag  = _flag_html(birth)
-
-        # pos chips
-        codes = [c for c in re.split(r"[,\s/;]+", pos.strip().upper()) if c]
-        seen, ordered = set(), []
-        for c in codes:
-            if c not in seen: seen.add(c); ordered.append(c)
-        pos_html = "".join(
-            f'<span class="postext" style="color:{_pro_chip_color(c)}">{c}</span>'
-            for c in ordered
-        )
-
-        # avatar
-        key_id = f"{_norm(player)}|{_norm(team)}"
-        avatar_url = resolve_player_photo(
-            player=player, team=team, league=league,
-            key_id=key_id,
-            session_photo_map=st.session_state["photo_map"],
-            global_overrides={},
-        )
-
-        # crest
-        crest_store_key = f"{_norm(team)}|{_norm(league)}"
-        crest_url = st.session_state["crest_map"].get(crest_store_key, "")
-        if not crest_url:
-            t_url = _get_fotmob_url(team)
-            if t_url:
-                tid = re.search(r"/teams/(\d+)/", t_url)
-                crest_url = f"https://images.fotmob.com/image_resources/logo/teamlogo/{tid.group(1)}.png" if tid else ""
-
-        if crest_url:
-            teamline_html = (
-                '<div class="teamline tl-wrap tl-has-crest">'
-                f'<img class="crest-icon crest-abs" src="{crest_url}" alt="">'
-                f'<span>{team} \u00b7 {league}</span></div>'
-            )
-        else:
-            teamline_html = f'<div class="teamline">{team} \u00b7 {league}</div>'
-
-        # ── role pills: position-group specific, from _rs_ cols in df_sc ──
-        all_role_pairs = _GROUP_ROLES.get(grp, [])
-        pills_html = ""
-
-        # Look up this player's scores in df_sc (has _rs_* cols)
-        sc_row = None
-        if df_sc is not None and not df_sc.empty:
-            sc_mask = (df_sc["Player"] == player) & (df_sc["Team"] == team)
-            sc_hits = df_sc[sc_mask]
-            if not sc_hits.empty:
-                sc_row = sc_hits.iloc[0]
-
-        for col_name, lbl in all_role_pairs[:3]:
-            val = 0
-            # Try _rs_ col from df_sc first
-            if sc_row is not None and col_name in sc_row.index and pd.notna(sc_row[col_name]):
-                val = _show99(sc_row[col_name])
-            else:
-                # Compute from ROLE_BUCKETS metrics via df_ref percentiles
-                rk = ROLE_KEY_MAP.get(_tok(pos), "ATT")
-                bucket_roles = ROLE_BUCKETS.get(rk, {})
-                # match role bucket by label
-                metrics = {}
-                for rn, spec in bucket_roles.items():
-                    if lbl.lower().replace(" ", "") in rn.lower().replace(" ", ""):
-                        metrics = spec.get("metrics", {}); break
-                if not metrics and bucket_roles:
-                    metrics = next(iter(bucket_roles.values())).get("metrics", {})
-                val = _show99(_role_score_from_ref(player, team, metrics))
-            pills_html += (
-                f'<div class="row" style="align-items:center;">'
-                f'<span class="pill" style="background:{_pro_rating_color_v2(val)}">{_f2(val)}</span>'
-                f'<span class="sub">{lbl}</span></div>'
-            )
-
-        card_html = (
-            '<div class="pro-wrap">'
-            '<div class="pro-card">'
-            '<div class="leftcol">'
-            '<div class="pro-avatar">'
-            f'<img src="{avatar_url}" alt="{player}" loading="lazy" />'
-            '</div>'
-            f'<div class="row leftrow1">{flag}<span class="chip">{age_txt}</span></div>'
-            f'<div class="row leftrow-foot"><span class="chip">{mins_txt} &nbsp; {foot}</span></div>'
-            f'<div class="row leftrow-contract"><span class="chip">{contract_txt}</span></div>'
-            '</div>'
-            '<div>'
-            f'<div class="name">{player}</div>'
-            f'{pills_html}'
-            f'<div class="row posrow">{pos_html}</div>'
-            f'{teamline_html}'
-            '</div>'
-            f'<div class="rank">#{rank_i:02d}</div>'
-            '</div>'
-            '</div>'
-        )
-        st.markdown(card_html, unsafe_allow_html=True)
-
-        # ── Individual Metrics expander ───────────────────────────────────
-        atts, defs, poss = _GROUP_METRICS.get(grp, (_ATT_METRICS, _DEF_METRICS, _POS_METRICS))
-
-        ref_mask = (df_ref["Player"] == player) & (df_ref["Team"] == team)
-        ref_rows = df_ref[ref_mask]
-        ref_row  = ref_rows.iloc[0] if not ref_rows.empty else row
-
-        with st.expander("Individual Metrics", expanded=False):
-            s1 = _sec_html_v2("ATTACKING"   if grp != "GK" else "GOALKEEPING", atts, df_ref, ref_row)
-            s2 = _sec_html_v2("DEFENSIVE"   if grp != "GK" else "POSSESSION",  defs, df_ref, ref_row)
-            s3 = _sec_html_v2("POSSESSION", poss, df_ref, ref_row) if poss else ""
-            sections = [s for s in [s1, s2, s3] if s]
-            if sections:
-                st.markdown('<div class="metrics-grid">' + "".join(sections) + "</div>",
-                            unsafe_allow_html=True)
-            else:
-                st.caption("No percentile data available for this player.")
 
 
 def load_remote_img(url):
@@ -1959,9 +1541,427 @@ else:
             )
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# PRO LAYOUT SECTION
+# ═══════════════════════════════════════════════════════════════════════════════
+
+PRO_LAYOUT_GROUPS = [
+    ("CF / ST",  ["CF","LWF","RWF"]),
+    ("AM / W",   ["AMF","LAMF","RAMF","LW","RW"]),
+    ("CM",       ["LCMF","RCMF","CMF"]),
+    ("DM",       ["DMF","LDMF","RDMF"]),
+    ("FB",       ["LB","RB","LWB","RWB"]),
+    ("CB",       ["CB","LCB","RCB"]),
+    ("GK",       ["GK"]),
+]
+
+_GROUP_ROLES = {
+    "CF / ST": [
+        ("_rs_Goal Threat CF",  "Goal Threat CF"),
+        ("_rs_Link Up CF",      "Link-Up CF"),
+        ("_rs_Target Man CF",   "Target Man CF"),
+    ],
+    "AM / W": [
+        ("_rs_Goal Threat ATT", "Goal Threat"),
+        ("_rs_Playmaker ATT",   "Playmaker"),
+        ("_rs_Ball Carrier ATT","Ball Carrier"),
+    ],
+    "CM": [
+        ("_rs_Defensive CM",          "Defensive CM"),
+        ("_rs_Advanced Playmaker CM", "Advanced Playmaker CM"),
+        ("_rs_Deep Playmaker CM",     "Deep Playmaker CM"),
+    ],
+    "DM": [
+        ("_rs_Defensive CM",      "Defensive CM"),
+        ("_rs_Deep Playmaker CM", "Deep Playmaker CM"),
+        ("_rs_Ball Carrying CM",  "Ball Carrying CM"),
+    ],
+    "FB": [
+        ("_rs_Build Up FB",   "Build Up FB"),
+        ("_rs_Attacking FB",  "Attacking FB"),
+        ("_rs_Defensive FB",  "Defensive FB"),
+    ],
+    "CB": [
+        ("_rs_Ball Playing CB", "Ball Playing CB"),
+        ("_rs_Wide CB",         "Wide CB"),
+        ("_rs_Box Defender",    "Box Defender"),
+    ],
+    "GK": [
+        ("_rs_Shot Stopper GK", "Shot Stopper GK"),
+        ("_rs_Ball Playing GK", "Ball Playing GK"),
+        ("_rs_Sweeper GK",      "Sweeper GK"),
+    ],
+}
+
+_ATT_METRICS = [
+    ("Crosses",               "Crosses per 90"),
+    ("Crossing Acc %",        "Accurate crosses, %"),
+    ("Goals (NP)",            "Non-penalty goals per 90"),
+    ("xG",                    "xG per 90"),
+    ("Conversion %",          "Goal conversion, %"),
+    ("xA",                    "xA per 90"),
+    ("Progressive Runs",      "Progressive runs per 90"),
+    ("Shots",                 "Shots per 90"),
+    ("Shot Acc %",            "Shots on target, %"),
+    ("Box Touches",           "Touches in box per 90"),
+]
+_DEF_METRICS = [
+    ("Aerial Duels",          "Aerial duels per 90"),
+    ("Aerial %",              "Aerial duels won, %"),
+    ("Def. Duels",            "Defensive duels per 90"),
+    ("Def. Duel %",           "Defensive duels won, %"),
+    ("PAdj Interceptions",    "PAdj Interceptions"),
+    ("Shots Blocked",         "Shots blocked per 90"),
+]
+_POS_METRICS = [
+    ("Accelerations",         "Accelerations per 90"),
+    ("Deep Completions",      "Deep completions per 90"),
+    ("Dribbles",              "Dribbles per 90"),
+    ("Dribble %",             "Successful dribbles, %"),
+    ("Fwd Passes",            "Forward passes per 90"),
+    ("Fwd Pass %",            "Accurate forward passes, %"),
+    ("Long Passes",           "Long passes per 90"),
+    ("Long Pass %",           "Accurate long passes, %"),
+    ("Key Passes",            "Key passes per 90"),
+    ("Passes",                "Passes per 90"),
+    ("Pass %",                "Accurate passes, %"),
+    ("Passes to F3rd",        "Passes to final third per 90"),
+    ("Passes to F3rd %",      "Accurate passes to final third, %"),
+    ("Passes to Box",         "Passes to penalty area per 90"),
+    ("Passes to Box %",       "Accurate passes to penalty area, %"),
+    ("Prog. Passes",          "Progressive passes per 90"),
+    ("Prog. Pass %",          "Accurate progressive passes, %"),
+    ("Smart Passes",          "Smart passes per 90"),
+]
+_GK_METRICS = [
+    ("Exits",                 "Exits per 90"),
+    ("Goals Prevented",       "Prevented goals per 90"),
+    ("Goals Conceded",        "Conceded goals per 90"),
+    ("Save Rate %",           "Save rate, %"),
+    ("Shots Against",         "Shots against per 90"),
+    ("xG Against",            "xG against per 90"),
+]
+_GK_POS_METRICS = [
+    ("Long Passes",           "Long passes per 90"),
+    ("Long Pass %",           "Accurate long passes, %"),
+    ("Passes",                "Passes per 90"),
+    ("Pass %",                "Accurate passes, %"),
+]
+
+_GROUP_METRICS = {
+    "CF / ST": (_ATT_METRICS,   _DEF_METRICS,   _POS_METRICS),
+    "AM / W":  (_ATT_METRICS,   _DEF_METRICS,   _POS_METRICS),
+    "CM":      (_ATT_METRICS,   _DEF_METRICS,   _POS_METRICS),
+    "DM":      (_ATT_METRICS,   _DEF_METRICS,   _POS_METRICS),
+    "FB":      (_ATT_METRICS,   _DEF_METRICS,   _POS_METRICS),
+    "CB":      (_ATT_METRICS,   _DEF_METRICS,   _POS_METRICS),
+    "GK":      (_GK_METRICS,    _GK_POS_METRICS, []),
+}
+
+
+def _pro_rating_color_v2(v: float) -> str:
+    v = float(v)
+    for thr, col in [(85,"#2E6114"),(75,"#5C9E2E"),(66,"#7FBC41"),
+                     (55,"#A7D763"),(41,"#F6D645"),(25,"#D77A2E"),(0,"#C63733")]:
+        if v >= thr:
+            return col
+    return "#C63733"
+
+def _show99(x) -> int:
+    try: return max(0, min(99, int(float(x))))
+    except: return 0
+
+def _f2(n) -> str:
+    try: return f"{int(n):02d}"
+    except: return "00"
+
+def _metric_pct_v2(row, met):
+    col = f"{met} Percentile"
+    if col in row.index:
+        try:
+            v = float(row[col])
+            if not np.isnan(v): return v
+        except: pass
+    return np.nan
+
+def _metric_val_v2(row, met):
+    if met in row.index:
+        try:
+            v = float(row[met])
+            if not np.isnan(v): return v
+        except: pass
+    return np.nan
+
+def _avail_pairs(df, pairs):
+    out = []
+    for lab, met in pairs:
+        if met in df.columns or f"{met} Percentile" in df.columns:
+            out.append((lab, met))
+    return out
+
+def _sec_html_v2(title, pairs, df_view, row):
+    pairs = _avail_pairs(df_view, pairs)
+    rows = []
+    for lab, met in pairs:
+        pct  = _metric_pct_v2(row, met)
+        p    = _show99(pct if not np.isnan(pct) else 0.0)
+        rawv = _metric_val_v2(row, met)
+        rtxt = "—" if np.isnan(rawv) else f"{rawv:.2f}".rstrip("0").rstrip(".")
+        rows.append(
+            "<div class=\"m-row\">"
+            f"<div class=\"m-label\">{lab}</div>"
+            "<div class=\"m-right\">"
+            f"<div class=\"m-val\">{rtxt}</div>"
+            f"<div class=\"m-badge\" style=\"background:{_pro_rating_color_v2(p)}\">{_f2(p)}</div>"
+            "</div></div>"
+        )
+    if not rows:
+        return ""
+    return f"<div class=\"m-sec\"><div class=\"m-title\">{title}</div>{''.join(rows)}</div>"
+
+
+_PRO_CSS = """
+<style>
+:root { --card:#141823; }
+.pro-wrap{ display:flex; justify-content:center; }
+.pro-card{
+  position:relative; width:min(420px,96%);
+  display:grid; grid-template-columns:96px 1fr 48px;
+  gap:12px; align-items:start;
+  background:var(--card); border:1px solid rgba(255,255,255,.06);
+  border-radius:20px; padding:16px; margin-bottom:12px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.03), 0 6px 24px rgba(0,0,0,.35);
+}
+.pro-avatar{ width:96px; height:96px; border-radius:12px; border:1px solid #2a3145; overflow:hidden; background:#0b0d12; }
+.pro-avatar img{ width:100%; height:100%; object-fit:cover; image-rendering:auto; transform:translateZ(0); }
+.flagchip{ display:inline-flex; align-items:center; gap:6px; background:transparent; border:none; padding:0; height:auto; }
+.flagchip img{ width:26px; height:18px; border-radius:2px; display:block; }
+.chip{ background:transparent; color:#a6a6a6; border:none; padding:0; border-radius:0; font-size:15px; line-height:18px; opacity:.92; }
+.row{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:2px 0; }
+.leftrow1{ margin-top:6px; } .leftrow-foot{ margin-top:2px; } .leftrow-contract{ margin-top:10px; }
+.pill{
+  min-width:36px; height:28px; padding:0 8px; border-radius:6px;
+  display:inline-flex; align-items:center; justify-content:center;
+  font-weight:800; font-size:18px; color:#0b0d12; box-sizing:border-box;
+}
+.name{ font-weight:800; font-size:22px; color:#e8ecff; margin-bottom:6px; letter-spacing:.2px; line-height:1.15; }
+.sub{ color:#a8b3cf; font-size:15px; opacity:.9; }
+.posrow{ margin-top:13.5px; }
+.postext{ font-weight:600; font-size:14.5px; letter-spacing:.2px; margin-right:11px; }
+.rank{ position:absolute; top:10.5px; right:14px; color:#b7bfe1; font-weight:800; font-size:18px; text-align:right; pointer-events:none; }
+.teamline{ color:#dbe3ff; font-size:14px; font-weight:600; margin-top:6.5px; letter-spacing:.05px; opacity:.95; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.tl-wrap{ position:relative; } .tl-has-crest{ padding-left:24px; }
+.crest-icon{ height:1.35em; width:auto; object-fit:contain; image-rendering:auto; }
+.crest-abs{ position:absolute; left:0; top:50%; transform:translateY(-50%); pointer-events:none; }
+.grp-header{
+  font-size:9px; font-weight:900; letter-spacing:.18em; color:#ef4444;
+  text-transform:uppercase; margin:18px 0 8px 0;
+  border-left:3px solid #ef4444; padding-left:8px;
+}
+.m-sec{ background:#121621; border:1px solid #242b3b; border-radius:14px; padding:9px 11px; }
+.m-title{ color:#e8ecff; font-weight:800; letter-spacing:.02em; margin:4px 0 8px 0; font-size:12px; }
+.m-row{ display:flex; align-items:center; gap:8px; padding:6px 6px; border-radius:8px; }
+.m-label{ color:#c9d3f2; font-size:14.5px; flex:1 1 0%; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.m-right{ display:flex; align-items:center; gap:8px; flex:0 0 auto; }
+.m-val{ color:#a8b3cf; font-size:12px; opacity:.9; min-width:48px; text-align:right; }
+.m-badge{ min-width:40px; text-align:center; padding:2px 9px; border-radius:7px; font-weight:800; font-size:17px; color:#0b0d12; }
+.metrics-grid{ display:grid; grid-template-columns:1fr; gap:10px; }
+@media (min-width:720px){ .metrics-grid{ grid-template-columns:repeat(3,1fr); } }
+</style>
+"""
+
+def render_pro_layout_v2(team_players_df: pd.DataFrame, df_sc, df_full: pd.DataFrame = None):
+    st.markdown(_PRO_CSS, unsafe_allow_html=True)
+    st.session_state.setdefault("photo_map", {})
+    st.session_state.setdefault("crest_map", {})
+
+    _TOK_TO_GRP = {t: lbl for lbl, toks in PRO_LAYOUT_GROUPS for t in toks}
+    def _player_grp(pos_str):
+        return _TOK_TO_GRP.get(_tok(str(pos_str)), "CM")
+
+    ALL_MET = list({met for _, met in
+        _ATT_METRICS + _DEF_METRICS + _POS_METRICS + _GK_METRICS + _GK_POS_METRICS})
+
+    @st.cache_data(show_spinner=False)
+    def _build_ref(df_raw: pd.DataFrame) -> pd.DataFrame:
+        df = df_raw.copy()
+        df["_grp"] = df["Position"].apply(_player_grp)
+        for met in ALL_MET:
+            if met not in df.columns:
+                continue
+            df[met] = pd.to_numeric(df[met], errors="coerce")
+            pct_col = f"{met} Percentile"
+            df[pct_col] = np.nan
+            for (lg, grp), idx in df.groupby(["League", "_grp"]).groups.items():
+                pool = df.loc[idx, met].dropna()
+                if pool.empty:
+                    continue
+                ranks = pool.rank(pct=True, method="average") * 100.0
+                df.loc[ranks.index, pct_col] = ranks
+        return df
+
+    ref_src = df_full if (df_full is not None and not df_full.empty) else \
+              df_sc   if (df_sc   is not None and not df_sc.empty)   else \
+              team_players_df
+    df_ref = _build_ref(ref_src)
+
+    df_team = team_players_df.drop_duplicates(subset=["Player", "Team"]).copy()
+    mins_col = "Minutes played"
+    if mins_col in df_team.columns:
+        df_team[mins_col] = pd.to_numeric(df_team[mins_col], errors="coerce")
+        df_team = df_team.sort_values(mins_col, ascending=False)
+    df_team = df_team.reset_index(drop=True)
+
+    if df_team.empty:
+        st.info("No players found for this team.")
+        return
+
+    def _role_score_from_ref(player, team, metrics: dict) -> float:
+        mask = (df_ref["Player"] == player) & (df_ref["Team"] == team)
+        hits = df_ref[mask]
+        if hits.empty:
+            return 0.0
+        r = hits.iloc[0]
+        total_w, wsum = 0.0, 0.0
+        for met, w in metrics.items():
+            pct_col = f"{met} Percentile"
+            if pct_col in r.index and pd.notna(r[pct_col]):
+                wsum += float(r[pct_col]) * w
+                total_w += w
+        return (wsum / total_w) if total_w > 0 else 0.0
+
+    for rank_i, (_, row) in enumerate(df_team.iterrows(), start=1):
+        player  = str(row.get("Player", "") or "")
+        team    = str(row.get("Team",   "") or "")
+        league  = str(row.get("League", "") or "")
+        pos     = str(row.get("Position", "") or "")
+        grp     = _player_grp(pos)
+
+        try:    mins = int(float(row.get(mins_col) or 0))
+        except: mins = 0
+        mins_txt = f"{mins}\u2032"
+
+        try:    age_val = int(float(row.get("Age") or 0)) if pd.notna(row.get("Age", np.nan)) else 0
+        except: age_val = 0
+        age_txt = f"{age_val}y.o." if age_val > 0 else "\u2014"
+
+        cy  = pd.to_datetime(row.get("Contract expires"), errors="coerce")
+        cyr = int(cy.year) if pd.notna(cy) else 0
+        contract_txt = str(cyr) if cyr > 0 else "\u2014"
+
+        birth = str(row.get("Birth country", "") or "")
+        foot  = _get_foot(row) or "\u2014"
+        flag  = _flag_html(birth)
+
+        codes = [c for c in re.split(r"[,\s/;]+", pos.strip().upper()) if c]
+        seen, ordered = set(), []
+        for c in codes:
+            if c not in seen: seen.add(c); ordered.append(c)
+        pos_html = "".join(
+            f'<span class="postext" style="color:{_pro_chip_color(c)}">{c}</span>'
+            for c in ordered
+        )
+
+        # ── avatar via fixed resolve_player_photo ──────────────────────────
+        key_id = f"{_norm_str(player)}|{_norm_str(team)}"
+        avatar_url = resolve_player_photo(
+            player=player, team=team, league=league,
+            key_id=key_id,
+            session_photo_map=st.session_state["photo_map"],
+            global_overrides={},
+        )
+
+        # ── crest ──────────────────────────────────────────────────────────
+        crest_store_key = f"{_norm_str(team)}|{_norm_str(league)}"
+        crest_url = st.session_state["crest_map"].get(crest_store_key, "")
+        if not crest_url:
+            t_url = _get_fotmob_url(team)
+            if t_url:
+                tid = re.search(r"/teams/(\d+)/", t_url)
+                crest_url = f"https://images.fotmob.com/image_resources/logo/teamlogo/{tid.group(1)}.png" if tid else ""
+
+        if crest_url:
+            teamline_html = (
+                '<div class="teamline tl-wrap tl-has-crest">'
+                f'<img class="crest-icon crest-abs" src="{crest_url}" alt="">'
+                f'<span>{team} \u00b7 {league}</span></div>'
+            )
+        else:
+            teamline_html = f'<div class="teamline">{team} \u00b7 {league}</div>'
+
+        # ── role pills ─────────────────────────────────────────────────────
+        all_role_pairs = _GROUP_ROLES.get(grp, [])
+        pills_html = ""
+
+        sc_row = None
+        if df_sc is not None and not df_sc.empty:
+            sc_mask = (df_sc["Player"] == player) & (df_sc["Team"] == team)
+            sc_hits = df_sc[sc_mask]
+            if not sc_hits.empty:
+                sc_row = sc_hits.iloc[0]
+
+        for col_name, lbl in all_role_pairs[:3]:
+            val = 0
+            if sc_row is not None and col_name in sc_row.index and pd.notna(sc_row[col_name]):
+                val = _show99(sc_row[col_name])
+            else:
+                rk = ROLE_KEY_MAP.get(_tok(pos), "ATT")
+                bucket_roles = ROLE_BUCKETS.get(rk, {})
+                metrics = {}
+                for rn, spec in bucket_roles.items():
+                    if lbl.lower().replace(" ", "") in rn.lower().replace(" ", ""):
+                        metrics = spec.get("metrics", {}); break
+                if not metrics and bucket_roles:
+                    metrics = next(iter(bucket_roles.values())).get("metrics", {})
+                val = _show99(_role_score_from_ref(player, team, metrics))
+            pills_html += (
+                f'<div class="row" style="align-items:center;">'
+                f'<span class="pill" style="background:{_pro_rating_color_v2(val)}">{_f2(val)}</span>'
+                f'<span class="sub">{lbl}</span></div>'
+            )
+
+        card_html = (
+            '<div class="pro-wrap">'
+            '<div class="pro-card">'
+            '<div class="leftcol">'
+            '<div class="pro-avatar">'
+            f'<img src="{avatar_url}" alt="{player}" loading="lazy" />'
+            '</div>'
+            f'<div class="row leftrow1">{flag}<span class="chip">{age_txt}</span></div>'
+            f'<div class="row leftrow-foot"><span class="chip">{mins_txt} &nbsp; {foot}</span></div>'
+            f'<div class="row leftrow-contract"><span class="chip">{contract_txt}</span></div>'
+            '</div>'
+            '<div>'
+            f'<div class="name">{player}</div>'
+            f'{pills_html}'
+            f'<div class="row posrow">{pos_html}</div>'
+            f'{teamline_html}'
+            '</div>'
+            f'<div class="rank">#{rank_i:02d}</div>'
+            '</div>'
+            '</div>'
+        )
+        st.markdown(card_html, unsafe_allow_html=True)
+
+        atts, defs, poss = _GROUP_METRICS.get(grp, (_ATT_METRICS, _DEF_METRICS, _POS_METRICS))
+
+        ref_mask = (df_ref["Player"] == player) & (df_ref["Team"] == team)
+        ref_rows = df_ref[ref_mask]
+        ref_row  = ref_rows.iloc[0] if not ref_rows.empty else row
+
+        with st.expander("Individual Metrics", expanded=False):
+            s1 = _sec_html_v2("ATTACKING"   if grp != "GK" else "GOALKEEPING", atts, df_ref, ref_row)
+            s2 = _sec_html_v2("DEFENSIVE"   if grp != "GK" else "POSSESSION",  defs, df_ref, ref_row)
+            s3 = _sec_html_v2("POSSESSION", poss, df_ref, ref_row) if poss else ""
+            sections = [s for s in [s1, s2, s3] if s]
+            if sections:
+                st.markdown('<div class="metrics-grid">' + "".join(sections) + "</div>",
+                            unsafe_allow_html=True)
+            else:
+                st.caption("No percentile data available for this player.")
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# PRO LAYOUT SECTION
+# PRO LAYOUT RENDER
 # ═══════════════════════════════════════════════════════════════════════════════
 st.markdown("---")
 st.markdown('<div style="font-size:11px;font-weight:900;letter-spacing:.18em;color:#6b7280;'

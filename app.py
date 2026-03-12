@@ -2531,7 +2531,7 @@ def _build_team_rank_df(
             p = rec.get(f"_pct_{m}", np.nan)
             if pd.notna(p):
                 cv.append(p * w); cw.append(w)
-        rec["Complete Score"] = float(sum(cv) / sum(cw)) if cw else np.nan
+        rec["Complete Score"] = int(round(float(sum(cv) / sum(cw)))) if cw else np.nan
         # league best for composite scores is always 100 (they're percentile-based)
         rec["_lgbest_Complete Score"] = 100.0
         rec["_lgbest_Impact Score"]   = 100.0
@@ -2545,7 +2545,7 @@ def _build_team_rank_df(
                 p = rec.get(f"_pct_{m}", np.nan)
                 if pd.notna(p):
                     rv.append(p * w); rw.append(w)
-            rs = float(sum(rv) / sum(rw)) if rw else np.nan
+            rs = round(float(sum(rv) / sum(rw))) if rw else np.nan
             rec[f"_role_{rname}"]         = rs
             rec[f"_lgbest__role_{rname}"] = 100.0   # percentile-based, cap 100
             if pd.notna(rs) and rs > best_role_val:
@@ -2553,7 +2553,7 @@ def _build_team_rank_df(
                 best_role_name = rname
 
         rec["_best_role_name"]  = best_role_name
-        rec["_best_role_score"] = best_role_val if best_role_val >= 0 else np.nan
+        rec["_best_role_score"] = int(round(best_role_val)) if best_role_val >= 0 else np.nan
 
         # Impact Score = best role × league strength factor
         role_vals = [v for k, v in rec.items() if k.startswith("_role_") and pd.notna(v)]
@@ -2568,12 +2568,13 @@ def _build_team_rank_df(
 
     df_out = pd.DataFrame(result_rows)
 
-    # Normalise Impact Score 0–100 within team
+    # Normalise Impact Score 0–100 within team, store as integer
     imp = pd.to_numeric(df_out["Impact Score"], errors="coerce")
     lo, hi = imp.min(), imp.max()
-    df_out["Impact Score"] = (
+    normalised = (
         100.0 * (imp - lo) / (hi - lo) if (pd.notna(lo) and hi > lo) else imp.fillna(0.0)
     )
+    df_out["Impact Score"] = normalised.round(0).astype("Int64")
 
     return df_out
 
@@ -2585,10 +2586,7 @@ def _rank_val_fmt(v) -> str:
     try:
         v = float(v)
         if np.isnan(v): return "—"
-        if abs(v) >= 100: return f"{v:.0f}"
-        if abs(v) >= 10:  return f"{v:.1f}"
-        if abs(v) >= 1:   return f"{v:.2f}"
-        return f"{v:.3f}"
+        return str(int(round(v)))
     except Exception:
         return "—"
 
@@ -2675,20 +2673,32 @@ def _make_team_ranking_image(
 
     N = len(df_top)
 
-    def _place_header_logos(ax, badge_img, league_img, logo_right, logo_top, logo_size_pts):
-        """Draw team badge and league logo stacked in top-right corner of header."""
+    def _place_header_logos(ax, badge_img, league_img, logo_right, logo_top,
+                            badge_target_px, league_target_px):
+        """Draw league logo then team badge stacked in top-right corner of header.
+        Uses pixel-accurate zoom so both images render at a consistent size."""
+
+        def _zoom_for(img, target_px):
+            if img is None:
+                return 1.0
+            biggest = max(img.shape[0], img.shape[1], 1)
+            return float(target_px) / float(biggest)
+
         x = logo_right
-        gap = logo_size_pts * 0.015
+        cur_top = logo_top
+        gap = badge_target_px * 0.015   # small gap between the two images
+
         if league_img is not None:
-            zz = min(logo_size_pts / max(league_img.shape[0], league_img.shape[1], 1), 1.0)
+            zz = _zoom_for(league_img, league_target_px)
             ax.add_artist(AnnotationBbox(OffsetImage(league_img, zoom=zz),
-                                         (x, logo_top), frameon=False, zorder=8,
+                                         (x, cur_top), frameon=False, zorder=8,
                                          box_alignment=(1.0, 1.0)))
-            logo_top -= logo_size_pts * 0.018 + gap
+            cur_top -= league_target_px * 0.013 + gap
+
         if badge_img is not None:
-            zz = min(logo_size_pts / max(badge_img.shape[0], badge_img.shape[1], 1), 1.0)
+            zz = _zoom_for(badge_img, badge_target_px)
             ax.add_artist(AnnotationBbox(OffsetImage(badge_img, zoom=zz),
-                                         (x, logo_top), frameon=False, zorder=8,
+                                         (x, cur_top), frameon=False, zorder=8,
                                          box_alignment=(1.0, 1.0)))
 
     # ── Shared row-drawing closure ────────────────────────────────────────────
@@ -2792,7 +2802,8 @@ def _make_team_ranking_image(
 
         # Team badge + league logo top-right
         _place_header_logos(ax, header_badge_img, header_league_img,
-                            logo_right=R, logo_top=0.975, logo_size_pts=52)
+                            logo_right=R, logo_top=0.975,
+                            badge_target_px=80, league_target_px=52)
 
         hd_y, ft_y = 0.838, 0.040
         ax.plot([L, R], [hd_y]*2, color=DIV, lw=2)
@@ -2849,7 +2860,8 @@ def _make_team_ranking_image(
 
     # Team badge + league logo stacked top-right of header
     _place_header_logos(ax, header_badge_img, header_league_img,
-                        logo_right=0.96, logo_top=TOTAL_H - 0.18, logo_size_pts=36)
+                        logo_right=0.96, logo_top=TOTAL_H - 0.18,
+                        badge_target_px=56, league_target_px=36)
 
     base_y  = TOTAL_H - HEADER_H
     row_gap = ROW_H
@@ -3069,12 +3081,23 @@ else:
 
                 # Pre-fetch team badge and league logo once for header
                 _hdr_badge  = get_team_badge(sel_team)
-                # League logo: try get_league_logo if it exists, else None
+
+                # League logo — try get_league_logo() first, then fall back to
+                # LEAGUE_LOGO_URLS dict (from leaguelogos.py), then FotMob direct
                 _hdr_league = None
                 try:
                     _hdr_league = get_league_logo(t_league)
                 except Exception:
                     pass
+
+                if _hdr_league is None:
+                    try:
+                        # LEAGUE_LOGO_URLS is the dict in leaguelogos.py
+                        _lg_url = LEAGUE_LOGO_URLS.get(t_league, "")
+                        if _lg_url and _lg_url.startswith("http"):
+                            _hdr_league = load_remote_img(_lg_url)
+                    except Exception:
+                        pass
 
                 # ── Generate ──────────────────────────────────────────────────
                 if st.button("🖼 Generate Ranking Image", key="tr_gen_btn"):

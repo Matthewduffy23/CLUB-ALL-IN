@@ -2624,7 +2624,9 @@ def _make_team_ranking_image(
     show_score_pill:  bool,
     photo_func,
     badge_func,
-    rank_mode:        str = "Composite score",  # "Best Role" triggers role-name sub-line
+    rank_mode:        str = "Composite score",
+    header_badge_img = None,    # team badge numpy array for header top-right
+    header_league_img = None,   # league logo numpy array for header top-right
 ) -> bytes:
 
     df_top = df_show.head(10).copy()
@@ -2673,9 +2675,25 @@ def _make_team_ranking_image(
 
     N = len(df_top)
 
+    def _place_header_logos(ax, badge_img, league_img, logo_right, logo_top, logo_size_pts):
+        """Draw team badge and league logo stacked in top-right corner of header."""
+        x = logo_right
+        gap = logo_size_pts * 0.015
+        if league_img is not None:
+            zz = min(logo_size_pts / max(league_img.shape[0], league_img.shape[1], 1), 1.0)
+            ax.add_artist(AnnotationBbox(OffsetImage(league_img, zoom=zz),
+                                         (x, logo_top), frameon=False, zorder=8,
+                                         box_alignment=(1.0, 1.0)))
+            logo_top -= logo_size_pts * 0.018 + gap
+        if badge_img is not None:
+            zz = min(logo_size_pts / max(badge_img.shape[0], badge_img.shape[1], 1), 1.0)
+            ax.add_artist(AnnotationBbox(OffsetImage(badge_img, zoom=zz),
+                                         (x, logo_top), frameon=False, zorder=8,
+                                         box_alignment=(1.0, 1.0)))
+
     # ── Shared row-drawing closure ────────────────────────────────────────────
     def _draw_rows(ax,
-                   L, R, RANK_X, BADGE_X, PHOTO_X, NAME_X,
+                   L, R, RANK_X, PHOTO_X, NAME_X,
                    BAR_L, BAR_R, BAR_H, VAL_X,
                    ROW_TOP, row_gap, row_h,
                    name_fs, sub_fs, val_fs,
@@ -2703,13 +2721,6 @@ def _make_team_ranking_image(
             ax.text(RANK_X, y, str(i + 1),
                     fontsize=name_fs * 0.55, fontweight="bold",
                     color=TXT, ha="center", va="center", zorder=5)
-
-            # Badge
-            badge = badge_func(row)
-            if badge is not None:
-                zz = min(38.0 / max(badge.shape[0], badge.shape[1], 1), 0.48)
-                ax.add_artist(AnnotationBbox(OffsetImage(badge, zoom=zz),
-                                             (BADGE_X, y), frameon=False, zorder=5))
 
             # Photo — use silhouette if not fetched
             photo = photo_func(row)
@@ -2779,6 +2790,10 @@ def _make_team_ranking_image(
         ax.text(L, 0.918, t2, fontsize=32, fontweight="bold", color=TXT, ha="left", va="top")
         ax.text(L, 0.878, t3, fontsize=19, color=SUB,         ha="left", va="top")
 
+        # Team badge + league logo top-right
+        _place_header_logos(ax, header_badge_img, header_league_img,
+                            logo_right=R, logo_top=0.975, logo_size_pts=52)
+
         hd_y, ft_y = 0.838, 0.040
         ax.plot([L, R], [hd_y]*2, color=DIV, lw=2)
         ax.plot([L, R], [ft_y]*2, color=DIV, lw=2)
@@ -2793,9 +2808,8 @@ def _make_team_ranking_image(
         _draw_rows(ax,
                    L=L, R=R,
                    RANK_X  = L + 0.022,
-                   BADGE_X = L + 0.098,
-                   PHOTO_X = L + 0.172,
-                   NAME_X  = L + 0.245,
+                   PHOTO_X = L + 0.095,
+                   NAME_X  = L + 0.170,
                    BAR_L   = L + 0.620,
                    BAR_R   = R - 0.140,
                    BAR_H   = row_h * 0.25,
@@ -2833,6 +2847,10 @@ def _make_team_ranking_image(
     ax.text(0.04, ty - 0.36, t2, fontsize=14, fontweight="bold", color=TXT, ha="left", va="top")
     ax.text(0.04, ty - 0.65, t3, fontsize=11, color=SUB,         ha="left", va="top")
 
+    # Team badge + league logo stacked top-right of header
+    _place_header_logos(ax, header_badge_img, header_league_img,
+                        logo_right=0.96, logo_top=TOTAL_H - 0.18, logo_size_pts=36)
+
     base_y  = TOTAL_H - HEADER_H
     row_gap = ROW_H
     row_h   = ROW_H * 0.95
@@ -2843,9 +2861,8 @@ def _make_team_ranking_image(
     _draw_rows(ax,
                L=0.04, R=0.96,
                RANK_X  = 0.072,
-               BADGE_X = 0.128,
-               PHOTO_X = 0.183,
-               NAME_X  = 0.237,
+               PHOTO_X = 0.130,
+               NAME_X  = 0.188,
                BAR_L   = 0.630,
                BAR_R   = 0.820,
                BAR_H   = 0.135,
@@ -3050,25 +3067,33 @@ else:
                         return load_remote_img(url)   # None on failure → silhouette used in draw
                     return None
 
-                def _tr_badge_func(row):
-                    return get_team_badge(str(row.get("Team", sel_team)))
+                # Pre-fetch team badge and league logo once for header
+                _hdr_badge  = get_team_badge(sel_team)
+                # League logo: try get_league_logo if it exists, else None
+                _hdr_league = None
+                try:
+                    _hdr_league = get_league_logo(t_league)
+                except Exception:
+                    pass
 
                 # ── Generate ──────────────────────────────────────────────────
                 if st.button("🖼 Generate Ranking Image", key="tr_gen_btn"):
                     with st.spinner("Generating image…"):
                         _rank_img_bytes = _make_team_ranking_image(
-                            df_show         = _tr_sorted,
-                            rank_col        = _rank_col_sel,
-                            value_col       = _value_col,
-                            title_lines     = [_rank_t1, _rank_t2, _rank_t3],
-                            theme           = _rank_theme,
-                            export_mode     = _rank_export_mode,
-                            show_age        = _rank_show_age,
-                            highlight_names = _rank_hi_names,
-                            show_score_pill = _rank_score_pill,
-                            photo_func      = _tr_photo_func,
-                            badge_func      = _tr_badge_func,
-                            rank_mode       = _rank_mode,
+                            df_show           = _tr_sorted,
+                            rank_col          = _rank_col_sel,
+                            value_col         = _value_col,
+                            title_lines       = [_rank_t1, _rank_t2, _rank_t3],
+                            theme             = _rank_theme,
+                            export_mode       = _rank_export_mode,
+                            show_age          = _rank_show_age,
+                            highlight_names   = _rank_hi_names,
+                            show_score_pill   = _rank_score_pill,
+                            photo_func        = _tr_photo_func,
+                            badge_func        = None,   # no per-row badge — badge is in header
+                            rank_mode         = _rank_mode,
+                            header_badge_img  = _hdr_badge,
+                            header_league_img = _hdr_league,
                         )
                         st.session_state["_tr_img_bytes"] = _rank_img_bytes
 

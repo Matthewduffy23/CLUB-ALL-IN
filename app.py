@@ -2466,7 +2466,13 @@ def _build_team_rank_df(
 
     # Pre-compute league bests: (pk, metric) -> float  [top raw value in league+pos pool]
     _lg_bests: dict[tuple, float] = {}
-    all_metric_cols = {m for pairs in _RANK_POS_METRICS.values() for _, m in pairs}
+    all_metric_cols = (
+        {m for pairs in _RANK_POS_METRICS.values() for _, m in pairs}
+        | {m for rk_specs in ROLE_BUCKETS.values()
+             for spec in rk_specs.values()
+             for m in spec.get("metrics", {}).keys()}
+        | {m for wmap in _RANK_COMPLETE_WEIGHTS.values() for m in wmap.keys()}
+    )
     for pk, toks in _POS_TOK_SET.items():
         mask = (df_all["League"].astype(str) == str(league)) & df_all["_ftok"].isin(toks)
         sub  = df_all[mask]
@@ -2507,10 +2513,20 @@ def _build_team_rank_df(
             if m in row.index:
                 rec[m] = pd.to_numeric(row[m], errors="coerce")
 
+
         # Percentile ranks + store league best for bar scaling
+        # Must cover _RANK_POS_METRICS (display) + ROLE_BUCKETS metrics + Complete weights
         ref_toks = _POS_TOK_SET.get(pk, set())
         ref_mask = (df_all["League"].astype(str) == lg) & df_all["_ftok"].isin(ref_toks)
-        for _, m in _RANK_POS_METRICS.get(pk, _RANK_POS_METRICS["CM"]):
+
+        # Build the full set of metrics to percentile-rank for this player
+        _display_metrics = {m for _, m in _RANK_POS_METRICS.get(pk, _RANK_POS_METRICS["CM"])}
+        _role_metrics    = {m for spec in ROLE_BUCKETS.get(_role_key(pos_str), {}).values()
+                              for m in spec.get("metrics", {}).keys()}
+        _complete_metrics = set(_RANK_COMPLETE_WEIGHTS.get(pk, {}).keys())
+        _all_pct_metrics  = _display_metrics | _role_metrics | _complete_metrics
+
+        for m in _all_pct_metrics:
             val = pd.to_numeric(row.get(m, np.nan), errors="coerce")
             if m in df_all.columns:
                 ref_s = pd.to_numeric(df_all.loc[ref_mask, m], errors="coerce").dropna()

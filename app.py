@@ -3180,32 +3180,31 @@ else:
     # END TEAM PLAYER RANKINGS SECTION
     # ═══════════════════════════════════════════════════════════════════════════════
 
+# TEAM ARCHETYPE MAP
     # ═══════════════════════════════════════════════════════════════════════════════
-    # TEAM ARCHETYPE MAP — position-filtered scatter, highlights team players
-    # Paste immediately after Team Player Rankings section in team_squad_app.py
-    # Positions: ATT · CB · CM · ST · FB · GK
-    # ═══════════════════════════════════════════════════════════════════════════════
-    
+
     from scipy.stats import rankdata as _rankdata_arch
     from matplotlib.ticker import MultipleLocator as _MLoc
     from matplotlib.lines import Line2D as _L2D
     from matplotlib import patheffects as _pe_arch
     from io import BytesIO as _BytesIO_arch
     import uuid as _uuid_arch
-    
+
     st.markdown("---")
-    st.header("🧭 Team Archetype Map")
-    
+    st.header("\U0001f9ed Team Archetype Map")
+
+    # ── Get team league ──────────────────────────────────────────────────────────
+    _arch_team_league = (
+        _rank_team_players.iloc[0]["League"]
+        if not _rank_team_players.empty and "League" in _rank_team_players.columns
+        else None
+    )
+
     # ── Position selector ────────────────────────────────────────────────────────
     _ARCH_POS_OPTIONS = ["GK", "CB", "FB", "CM / DM", "ATT (W/AM)", "ST (CF)"]
-    _arch_pos = st.selectbox(
-        "Select position group",
-        _ARCH_POS_OPTIONS,
-        index=0,
-        key="arch_pos_sel",
-    )
-    
-    # ── Config per position ──────────────────────────────────────────────────────
+    _arch_pos = st.selectbox("Position group", _ARCH_POS_OPTIONS, index=0, key="arch_pos_sel")
+
+    # ── Config per position ───────────────────────────────────────────────────────
     _ARCH_CFG = {
         "ATT (W/AM)": dict(
             pos_tokens=["LWF", "RWF", "RW", "LW", "RAMF", "LAMF", "AMF"],
@@ -3322,7 +3321,7 @@ else:
             },
             flag_col="flag_score", flag_thr=70, flag_label="Ball Carrier",
             box_col=None, box_thr=None, box_label=None,
-            quadrants={"tl": "LOCKDOWN", "tr": "TWO-WAY", "bl": "LIMITED", "br": "BUILD-UP / ATTACKING"},
+            quadrants={"tl": "LOCKDOWN", "tr": "TWO-WAY", "bl": "LIMITED", "br": "BUILD-UP"},
             classify=lambda r: (
                 "Two-Way"  if r["def_score"] >= 50 and r["poss_score"] >= 50 else
                 "Lockdown" if r["def_score"] >= 50 else
@@ -3353,85 +3352,52 @@ else:
                          "Complete": "#4E79A7", "Limited": "#E15759"},
         ),
     }
-    
+
     _cfg = _ARCH_CFG[_arch_pos]
     _arch_has_box = _cfg["box_col"] is not None
-    
-    # ── Settings expander ────────────────────────────────────────────────────────
-    # These must be outside the expander
-    _arch_leagues_avail = sorted(df_players["League"].dropna().unique().tolist())
-    _arch_player_league = (
-        _rank_team_players.iloc[0]["League"]
-        if not _rank_team_players.empty and "League" in _rank_team_players.columns
-        else None
-    )
-    
+
+    # ── Simple settings ───────────────────────────────────────────────────────────
     with st.expander("Scatter settings", expanded=False):
-        _arch_preset = st.selectbox(
-            "League preset",
-            ["Player's league", "Top 5 Europe", "Top 20 Europe", "EFL (England 2–4)", "Custom"],
-            index=0, key="arch_preset",
-        )
-        _arch_preset_map = {
-            "Player's league":   {_arch_player_league} if _arch_player_league else set(),
-            "Top 5 Europe":      set(PRESET_LEAGUES.get("Top 5 Europe", [])),
-            "Top 20 Europe":     set(PRESET_LEAGUES.get("Top 20 Europe", [])),
-            "EFL (England 2–4)": set(PRESET_LEAGUES.get("EFL (England 2–4)", [])),
-            "Custom":            set(),
-        }
-        _arch_add     = st.multiselect("Add leagues", _arch_leagues_avail, default=[], key="arch_add")
-        _arch_leagues = sorted(_arch_preset_map[_arch_preset] | set(_arch_add))
-        if not _arch_leagues and _arch_player_league:
-            _arch_leagues = [_arch_player_league]
-    
-        _arch_min_mins, _arch_max_mins = st.slider("Minutes", 0, 5000, (300, 5000), key="arch_mins")
-        _arch_min_age,  _arch_max_age  = st.slider("Age", 14, 45, (16, 40), key="arch_age")
-        _arch_min_ls,   _arch_max_ls   = st.slider("League Strength", 0, 101, (0, 101), key="arch_ls")
-    
+        _arch_min_mins = st.slider("Min minutes", 0, 5000, 300, 50, key="arch_mins")
         _arch_show_labels = st.toggle("Show labels", value=True, key="arch_labels")
         _arch_label_mode  = st.selectbox(
             "Label mode",
-            ["Team players only", "All players", "U23 only", "U21 only", "U18 only"],
+            ["Team players only", "All players", "U23 only", "U21 only"],
             index=0, key="arch_label_mode",
         )
         _arch_label_size = st.slider("Label size", 8, 20, 11, 1, key="arch_lblsize")
         _arch_pt_size    = st.slider("Point size", 24, 300, 180, 2, key="arch_pts")
         _arch_pt_alpha   = st.slider("Point opacity (others)", 0.05, 1.0, 0.25, 0.05, key="arch_alpha")
-    
         _arch_canvas = st.selectbox(
             "Canvas size",
-            ["1280×720", "1600×900", "1920×820", "1920×1080"],
+            ["1280x720", "1600x900", "1920x820", "1920x1080"],
             index=1, key="arch_canvas",
         )
-        _arch_w, _arch_h = map(int, _arch_canvas.replace("×", "x").split("x"))
-        _arch_top_gap    = st.slider("Top gap (px)", 0, 240, 80, 5, key="arch_gap")
-        _arch_render_exact = st.checkbox("Render exact pixels (PNG)", value=True, key="arch_exact")
-    
-    # ── Build pool ───────────────────────────────────────────────────────────────
-    _arch_pool = df_players[df_players["League"].isin(_arch_leagues)].copy()
+        _arch_w, _arch_h = map(int, _arch_canvas.split("x"))
+        _arch_top_gap = st.slider("Top gap (px)", 0, 240, 80, 5, key="arch_gap")
+
+    # ── Build pool — team league only ────────────────────────────────────────────
+    if not _arch_team_league:
+        st.info("Could not determine team league.")
+        st.stop()
+
+    _arch_pool = df_players[df_players["League"].astype(str) == str(_arch_team_league)].copy()
     _arch_pool["_primary_pos"] = _arch_pool["Position"].astype(str).str.split(",").str[0].str.strip()
     _arch_pool = _arch_pool[_arch_pool["_primary_pos"].isin(_cfg["pos_tokens"])].copy()
-    
-    _arch_pool["Minutes played"]  = pd.to_numeric(_arch_pool["Minutes played"], errors="coerce")
-    _arch_pool["Age"]             = pd.to_numeric(_arch_pool["Age"], errors="coerce")
-    _arch_pool["League Strength"] = _arch_pool["League"].map(LEAGUE_STRENGTHS).fillna(0)
-    
-    _arch_pool = _arch_pool[
-        _arch_pool["Minutes played"].between(_arch_min_mins, _arch_max_mins)
-        & _arch_pool["Age"].between(_arch_min_age, _arch_max_age)
-        & _arch_pool["League Strength"].between(_arch_min_ls, _arch_max_ls)
-    ].copy()
-    
+    _arch_pool["Minutes played"] = pd.to_numeric(_arch_pool["Minutes played"], errors="coerce")
+    _arch_pool["Age"]            = pd.to_numeric(_arch_pool["Age"], errors="coerce")
+    _arch_pool = _arch_pool[_arch_pool["Minutes played"].fillna(0) >= _arch_min_mins].copy()
+
     if _arch_pool.empty:
-        st.info(f"No players found for {_arch_pos} with current filters.")
+        st.info(f"No {_arch_pos} players found in {_arch_team_league} with >= {_arch_min_mins} mins.")
         st.stop()
-    
-    # ── Identify team players ────────────────────────────────────────────────────
-    _arch_team_players = set(
-        _arch_pool.loc[_arch_pool["Team"].astype(str) == str(sel_team), "Player"].astype(str)
+
+    # ── Team player set ───────────────────────────────────────────────────────────
+    _arch_team_set = set(
+        _rank_team_players["Player"].astype(str).tolist()
     )
-    
-    # ── Weighted percentile helper ────────────────────────────────────────────────
+
+    # ── Weighted percentile ───────────────────────────────────────────────────────
     def _arch_wpct(df_sub, row, mgrp):
         total = 0.0
         for m, w in mgrp.items():
@@ -3441,88 +3407,69 @@ else:
             pct  = _rankdata_arch(vals.values) / len(vals)
             total += float(pct[df_sub.index.get_loc(row.name)]) * w
         return total * 100.0
-    
-    # ── Compute scores ───────────────────────────────────────────────────────────
+
+    # ── Compute scores ────────────────────────────────────────────────────────────
     for _sn, _grp in _cfg["metric_groups"].items():
         _arch_pool[_sn] = _arch_pool.apply(
             lambda r, g=_grp: _arch_wpct(_arch_pool, r, g), axis=1
         )
-    
+
     _arch_pool["Archetype"] = _arch_pool.apply(_cfg["classify"], axis=1)
     _arch_pool["_flag"]     = _arch_pool[_cfg["flag_col"]] >= _cfg["flag_thr"]
-    
     if _arch_has_box:
         _arch_pool["_box_flag"] = _arch_pool[_cfg["box_col"]] >= _cfg["box_thr"]
-    
-    _arch_pool["_is_team"] = _arch_pool["Player"].astype(str).isin(_arch_team_players)
-    
-    # ── Plot ─────────────────────────────────────────────────────────────────────
-    _PAGE_BG = "#0a0f1c"
-    _PLOT_BG  = "#0a0f1c"
-    _GRID_C   = "#3a4050"
-    _TXT_C    = "#f1f5f9"
-    
+    _arch_pool["_is_team"]  = _arch_pool["Player"].astype(str).isin(_arch_team_set)
+
+    # ── Plot ──────────────────────────────────────────────────────────────────────
+    _PAGE_BG = "#0a0f1c"; _TXT_C = "#f1f5f9"; _GRID_C = "#3a4050"
     _arch_fig, _arch_ax = plt.subplots(figsize=(_arch_w / 100, _arch_h / 100), dpi=100)
     _arch_fig.patch.set_facecolor(_PAGE_BG)
-    _arch_ax.set_facecolor(_PLOT_BG)
-    
-    _arch_ax.set_xlim(0, 100)
-    _arch_ax.set_ylim(0, 100)
+    _arch_ax.set_facecolor(_PAGE_BG)
+    _arch_ax.set_xlim(0, 100); _arch_ax.set_ylim(0, 100)
     _arch_ax.set_xlabel(_cfg["x_label"], fontsize=16, fontweight="semibold", color=_TXT_C, labelpad=14)
     _arch_ax.set_ylabel(_cfg["y_label"], fontsize=16, fontweight="semibold", color=_TXT_C)
-    
     _arch_ax.xaxis.set_major_locator(_MLoc(10))
     _arch_ax.yaxis.set_major_locator(_MLoc(10))
     for _tk in _arch_ax.get_xticklabels() + _arch_ax.get_yticklabels():
         _tk.set_fontweight("semibold"); _tk.set_color(_TXT_C); _tk.set_fontsize(14)
-    
     _arch_ax.grid(True, color=_GRID_C, linewidth=0.6)
     for _sp in _arch_ax.spines.values():
         _sp.set_color("#e5e7eb"); _sp.set_linewidth(1.1)
-    
     _arch_ax.axvline(50, color="#FFFFFF", linestyle=(0, (4, 4)), lw=1.5)
     _arch_ax.axhline(50, color="#FFFFFF", linestyle=(0, (4, 4)), lw=1.5)
-    
+
     _qbox = dict(boxstyle="round,pad=0.35", facecolor="#d1d5db", edgecolor="none", alpha=0.9)
-    _arch_ax.text(6,  94, _cfg["quadrants"]["tl"], fontsize=16, weight="bold", bbox=_qbox)
-    _arch_ax.text(94, 94, _cfg["quadrants"]["tr"], fontsize=16, weight="bold", ha="right", bbox=_qbox)
-    _arch_ax.text(6,   6, _cfg["quadrants"]["bl"], fontsize=16, weight="bold", bbox=_qbox)
-    _arch_ax.text(96,  6, _cfg["quadrants"]["br"], fontsize=16, weight="bold", ha="right", bbox=_qbox)
-    
-    _x_col      = _cfg["x_col"]
-    _y_col      = _cfg["y_col"]
-    _arch_cols  = _cfg["arch_colors"]
-    _eff_sz     = _arch_pt_size * 1.5
-    
-    # Draw background players first, team players on top
+    _arch_ax.text(6,  94, _cfg["quadrants"]["tl"], fontsize=15, weight="bold", bbox=_qbox)
+    _arch_ax.text(94, 94, _cfg["quadrants"]["tr"], fontsize=15, weight="bold", ha="right", bbox=_qbox)
+    _arch_ax.text(6,   6, _cfg["quadrants"]["bl"], fontsize=15, weight="bold", bbox=_qbox)
+    _arch_ax.text(96,  6, _cfg["quadrants"]["br"], fontsize=15, weight="bold", ha="right", bbox=_qbox)
+
+    _x_col = _cfg["x_col"]; _y_col = _cfg["y_col"]
+    _arch_cols = _cfg["arch_colors"]; _eff_sz = _arch_pt_size * 1.5
+
     for _is_team_pass in [False, True]:
-        _sub   = _arch_pool[_arch_pool["_is_team"] == _is_team_pass]
+        _sub = _arch_pool[_arch_pool["_is_team"] == _is_team_pass]
         if _sub.empty:
             continue
         _alpha = 1.0 if _is_team_pass else _arch_pt_alpha
         _sz    = _eff_sz * (1.4 if _is_team_pass else 1.0)
-        _ew    = 1.2 if _is_team_pass else 0
         _ec    = "#ffffff" if _is_team_pass else "none"
+        _ew    = 1.2 if _is_team_pass else 0
         _zo    = 4 if _is_team_pass else 2
-    
+
         if _arch_has_box:
             for _, _r in _sub.iterrows():
                 _mk = "D" if _r["_box_flag"] else ("s" if _r["_flag"] else "o")
-                _arch_ax.scatter(
-                    _r[_x_col], _r[_y_col],
-                    s=_sz, c=_arch_cols[_r["Archetype"]],
-                    alpha=_alpha, marker=_mk,
-                    edgecolors=_ec, linewidths=_ew, zorder=_zo,
-                )
+                _arch_ax.scatter(_r[_x_col], _r[_y_col], s=_sz,
+                                 c=_arch_cols[_r["Archetype"]], alpha=_alpha,
+                                 marker=_mk, edgecolors=_ec, linewidths=_ew, zorder=_zo)
         else:
             for (_al, _fl), _gdf in _sub.groupby(["Archetype", "_flag"]):
-                _arch_ax.scatter(
-                    _gdf[_x_col], _gdf[_y_col],
-                    s=_sz, c=_arch_cols[_al],
-                    alpha=_alpha, marker="s" if _fl else "o",
-                    edgecolors=_ec, linewidths=_ew, zorder=_zo,
-                )
-    
+                _arch_ax.scatter(_gdf[_x_col], _gdf[_y_col], s=_sz,
+                                 c=_arch_cols[_al], alpha=_alpha,
+                                 marker="s" if _fl else "o",
+                                 edgecolors=_ec, linewidths=_ew, zorder=_zo)
+
     # Labels
     if _arch_show_labels:
         if _arch_label_mode == "Team players only":
@@ -3530,14 +3477,12 @@ else:
         elif _arch_label_mode == "All players":
             _ldf = _arch_pool
         elif _arch_label_mode == "U23 only":
-            _ldf = _arch_pool[_arch_pool["Age"] < 23]
+            _ldf = _arch_pool[pd.to_numeric(_arch_pool["Age"], errors="coerce") < 23]
         elif _arch_label_mode == "U21 only":
-            _ldf = _arch_pool[_arch_pool["Age"] < 21]
-        elif _arch_label_mode == "U18 only":
-            _ldf = _arch_pool[_arch_pool["Age"] < 18]
+            _ldf = _arch_pool[pd.to_numeric(_arch_pool["Age"], errors="coerce") < 21]
         else:
-            _ldf = _arch_pool
-    
+            _ldf = _arch_pool[_arch_pool["_is_team"]]
+
         for _, _r in _ldf.iterrows():
             _t = _arch_ax.annotate(
                 str(_r["Player"]),
@@ -3548,85 +3493,56 @@ else:
                 ha="left", va="bottom", zorder=7,
             )
             _t.set_path_effects([_pe_arch.withStroke(linewidth=2, foreground="#020617", alpha=0.9)])
-    
+
     # Legend
     _leg_h, _leg_l = [], []
-    
     for _an, _ac in _arch_cols.items():
         _leg_h.append(_L2D([0],[0], marker="s", linestyle="None", color="none",
                             markerfacecolor=_ac, markersize=14))
         _leg_l.append(_an)
-    
-    # Flag rows
-    _leg_h.append(_L2D([], [], linestyle="None", color="none"))
-    _leg_l.append(_cfg["flag_label"])
+    _leg_h.append(_L2D([], [], linestyle="None", color="none")); _leg_l.append(_cfg["flag_label"])
     _leg_h.append(_L2D([0],[0], marker="o", linestyle="None", color="none",
                         markeredgecolor=_TXT_C, markerfacecolor="#f1f5f9",
-                        markeredgewidth=1.4, markersize=14))
-    _leg_l.append("No")
+                        markeredgewidth=1.4, markersize=14)); _leg_l.append("No")
     _leg_h.append(_L2D([0],[0], marker="s", linestyle="None", color="none",
                         markeredgecolor=_TXT_C, markerfacecolor="#f1f5f9",
-                        markeredgewidth=1.4, markersize=14))
-    _leg_l.append("Yes")
-    
+                        markeredgewidth=1.4, markersize=14)); _leg_l.append("Yes")
     if _arch_has_box:
-        _leg_h.append(_L2D([], [], linestyle="None", color="none"))
-        _leg_l.append(_cfg["box_label"])
+        _leg_h.append(_L2D([], [], linestyle="None", color="none")); _leg_l.append(_cfg["box_label"])
         _leg_h.append(_L2D([0],[0], marker="D", linestyle="None", color="none",
                             markeredgecolor=_TXT_C, markerfacecolor="#f1f5f9",
-                            markeredgewidth=1.4, markersize=14))
-        _leg_l.append("Yes")
-    
-    # Team highlight explanation row
-    _leg_h.append(_L2D([], [], linestyle="None", color="none"))
-    _leg_l.append("Team highlight")
-    _leg_h.append(_L2D([0],[0], marker="o", linestyle="None", color="none",
-                        markeredgecolor="#ffffff", markerfacecolor="#888888",
-                        markeredgewidth=1.4, markersize=14))
-    _leg_l.append("White outline")
-    
+                            markeredgewidth=1.4, markersize=14)); _leg_l.append("Yes")
+
     _legend = _arch_ax.legend(
-        _leg_h, _leg_l,
-        title="Archetype", title_fontsize=15, fontsize=13,
+        _leg_h, _leg_l, title="Archetype", title_fontsize=15, fontsize=13,
         bbox_to_anchor=(1.01, 1.00), loc="upper left", frameon=False,
-        handlelength=1.1, handletextpad=0.4,
-        borderpad=0.25, labelspacing=0.55, borderaxespad=0.0,
+        handlelength=1.1, handletextpad=0.4, borderpad=0.25, labelspacing=0.55,
     )
-    _legend.get_title().set_color(_TXT_C)
-    _legend.get_title().set_fontweight("semibold")
-    
-    _hdr_rows = {_cfg["flag_label"], "Team highlight"}
+    _legend.get_title().set_color(_TXT_C); _legend.get_title().set_fontweight("semibold")
+    _hdr_rows = {_cfg["flag_label"]}
     if _arch_has_box:
         _hdr_rows.add(_cfg["box_label"])
     for _i, _lt in enumerate(_legend.get_texts()):
         _lt.set_color(_TXT_C)
         if _leg_l[_i] in _hdr_rows:
-            _lt.set_fontstyle("italic")
-            _lt.set_fontweight("semibold")
-    
-    _arch_fig.subplots_adjust(
-        left=0.06, right=0.865, bottom=0.11,
-        top=1.02 - _arch_top_gap / float(_arch_h),
-    )
-    
-    # Render
-    if _arch_render_exact:
-        _arch_buf = _BytesIO_arch()
-        _arch_fig.savefig(_arch_buf, format="png", dpi=100, facecolor=_PAGE_BG)
-        _arch_buf.seek(0)
-        st.image(_arch_buf, width=_arch_w)
-        st.download_button(
-            "⬇️ Download Archetype Map (PNG)",
-            data=_arch_buf.getvalue(),
-            file_name=f"archetype_{_arch_pos.replace(' ', '_').replace('/', '')}_{_uuid_arch.uuid4().hex[:6]}.png",
-            mime="image/png",
-            key="arch_dl",
-        )
-    else:
-        st.pyplot(_arch_fig)
-    
+            _lt.set_fontstyle("italic"); _lt.set_fontweight("semibold")
+
+    _arch_fig.subplots_adjust(left=0.06, right=0.865, bottom=0.11,
+                               top=1.02 - _arch_top_gap / float(_arch_h))
+
+    _arch_buf = _BytesIO_arch()
+    _arch_fig.savefig(_arch_buf, format="png", dpi=100, facecolor=_PAGE_BG)
+    _arch_buf.seek(0)
     plt.close(_arch_fig)
-    
+    st.image(_arch_buf, use_column_width=True)
+    st.download_button(
+        "\u2b07\ufe0f Download Archetype Map (PNG)",
+        data=_arch_buf.getvalue(),
+        file_name=f"archetype_{_arch_pos.replace(' ', '_').replace('/', '')}_{_uuid_arch.uuid4().hex[:6]}.png",
+        mime="image/png",
+        key="arch_dl",
+    )
+
     # ═══════════════════════════════════════════════════════════════════════════════
     # END TEAM ARCHETYPE MAP
     # ═══════════════════════════════════════════════════════════════════════════════

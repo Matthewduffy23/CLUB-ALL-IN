@@ -3358,10 +3358,11 @@ _cfg = _ARCH_CFG[_arch_pos]
 _arch_has_box = _cfg["box_col"] is not None
 
 # ── Settings expander ────────────────────────────────────────────────────────
-with st.expander("Scatter settings", expanded=False):
-    _arch_leagues_avail  = sorted(df["League"].dropna().unique().tolist())
-    _arch_player_league  = player_row.iloc[0]["League"] if not player_row.empty else None
+# These must be outside the expander — df and player_row are only in scope here
+_arch_leagues_avail = sorted(df["League"].dropna().unique().tolist())
+_arch_player_league = player_row.iloc[0]["League"] if not player_row.empty else None
 
+with st.expander("Scatter settings", expanded=False):
     _arch_preset = st.selectbox(
         "League preset",
         ["Player's league", "Top 5 Europe", "Top 20 Europe", "EFL (England 2–4)", "Custom"],
@@ -3625,4 +3626,3 @@ plt.close(_arch_fig)
 # ═══════════════════════════════════════════════════════════════════════════════
 # END TEAM ARCHETYPE MAP
 # ═══════════════════════════════════════════════════════════════════════════════
-

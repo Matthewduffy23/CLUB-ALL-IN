@@ -3534,16 +3534,19 @@ else:
     # ═══════════════════════════════════════════════════════════════════════════════
 
 # ═══════════════════════════════════════════════════════════════════════════════
-    # ROLE REQUIREMENTS — Section 1: Player-data radar only
-    #                     Section 2: Split radar with auto team data from CSV
+    # ROLE REQUIREMENTS — Section 1: Player-data polar radar
+    #                     Section 2: Split radar with auto team CSV
+    # Paste after END TEAM ARCHETYPE MAP
+    # Uses: df_players, sel_team, _arch_team_league (set in arch section)
     # ═══════════════════════════════════════════════════════════════════════════════
 
     import re as _re_rr
     from matplotlib.colors import LinearSegmentedColormap as _LSCM_rr
     from io import BytesIO as _BytesIO_rr
     import uuid as _uuid_rr
+    from scipy.stats import rankdata as _rankdata_rr
 
-    # ── Shared helpers ────────────────────────────────────────────────────────────
+    # ── Shared helpers ─────────────────────────────────────────────────────────────
     def _rr_safe_div(num, den):
         num = pd.to_numeric(num, errors="coerce")
         den = pd.to_numeric(den, errors="coerce").replace(0, np.nan)
@@ -3554,20 +3557,15 @@ else:
             return 100
         return int(round((1 - (rank - 1) / (total - 1)) * 100))
 
-    def _rr_keyify(s: str) -> str:
-        s = str(s or "").strip().lower()
-        s = _re_rr.sub(r"[^a-z0-9_]+", "_", s)
-        return s[:80] if s else "x"
-
     _RR_VALUE_COLORS = ["#be2a3e","#e25f48","#f88f4d","#f4d166","#90b960","#4b9b5f","#22763f"]
     _RR_CMAP = _LSCM_rr.from_list("rr_pct", _RR_VALUE_COLORS)
 
-    def _rr_polar_bars(labels, percentiles, title="", figsize=(8.5, 6.5)):
-        """Single polar bar chart (role-only half)."""
+    def _rr_polar_bars_fig(labels, percentiles):
+        """Full polar bar radar — dark background, coloured by percentile value."""
         N = len(labels)
-        angles = np.linspace(0, 2 * np.pi, N, endpoint=False)
+        angles    = np.linspace(0, 2 * np.pi, N, endpoint=False)
         bar_width = (2 * np.pi / N) * 0.85
-        fig = plt.figure(figsize=figsize)
+        fig = plt.figure(figsize=(8.5, 6.5))
         fig.patch.set_facecolor("#0a0f1c")
         ax = fig.add_axes([0.06, 0.06, 0.88, 0.88], polar=True)
         ax.set_facecolor("#0a0f1c")
@@ -3579,36 +3577,33 @@ else:
             v = max(0, min(100, percentiles[i]))
             ax.bar(angles[i], v, width=bar_width,
                    color=_RR_CMAP(v / 100), edgecolor="white", linewidth=1.4, zorder=2)
-        label_r = 135
         for i, lab in enumerate(labels):
-            ax.text(angles[i], label_r, str(lab).upper(),
+            ax.text(angles[i], 135, str(lab).upper(),
                     ha="center", va="center", fontsize=10, weight="bold", color="white")
         ax.set_xticks([]); ax.set_yticks([])
         ax.spines["polar"].set_visible(False); ax.grid(False)
-        if title:
-            fig.text(0.5, 0.97, title, ha="center", va="top",
-                     fontsize=13, color="#f1f5f9", fontweight="semibold")
         return fig
 
-    def _rr_split_polar(team_labels, team_pcts, role_labels, role_pcts, title=""):
-        """Split polar: left = team style, right = role requirements."""
+    def _rr_split_polar_fig(team_labels, team_pcts, role_labels, role_pcts):
+        """Split polar: left half = team style, right half = role requirements."""
         TEAM_TRACK = "#2b3646"; ROLE_TRACK = "#362b46"
         fig = plt.figure(figsize=(9.2, 8.2))
         fig.patch.set_facecolor("#0a0f1c")
         ax = fig.add_axes([0.06, 0.06, 0.88, 0.88], polar=True)
         ax.set_facecolor("#0a0f1c")
-        RMAX = 110; ax.set_rlim(0, RMAX)
+        RMAX = 110
+        ax.set_rlim(0, RMAX)
         ax.set_xticks([]); ax.set_yticks([])
         ax.grid(False); ax.spines["polar"].set_visible(False)
 
         n_t = len(team_labels); n_r = len(role_labels)
-        step_t = np.pi / n_t; step_r = np.pi / n_r
+        step_t = np.pi / n_t;   step_r = np.pi / n_r
         angles_t = (np.pi / 2) + (step_t / 2) + np.arange(n_t) * step_t
         angles_r = (-np.pi / 2) + (step_r / 2) + np.arange(n_r) * step_r
-        angles = np.concatenate([angles_t, angles_r])
-        labels_all = list(team_labels) + list(role_labels)
-        values_all = list(team_pcts) + list(role_pcts)
-        widths = [step_t * 0.76] * n_t + [step_r * 0.76] * n_r
+        angles   = np.concatenate([angles_t, angles_r])
+        all_vals = list(team_pcts) + list(role_pcts)
+        all_labs = list(team_labels) + list(role_labels)
+        widths   = [step_t * 0.76] * n_t + [step_r * 0.76] * n_r
 
         theta_ring = np.linspace(0, 2 * np.pi, 361)
         for r, a, lw in [(25, 0.08, 0.8), (50, 0.22, 1.8), (75, 0.08, 0.8)]:
@@ -3619,465 +3614,414 @@ else:
 
         for i, (th, w) in enumerate(zip(angles, widths)):
             ax.bar(th, 100, width=w, bottom=0,
-                   color=(TEAM_TRACK if i < n_t else ROLE_TRACK),
+                   color=TEAM_TRACK if i < n_t else ROLE_TRACK,
                    alpha=0.78, edgecolor="none", zorder=1)
-        for th, w, v in zip(angles, widths, values_all):
+        for th, w, v in zip(angles, widths, all_vals):
             v = int(max(0, min(100, v)))
             ax.bar(th, v, width=w, bottom=0,
-                   color=_RR_CMAP(v / 100),
-                   edgecolor="white", linewidth=1.4, zorder=3)
-
-        label_r = 128
-        for th, lab in zip(angles, labels_all):
-            ax.text(th, label_r, str(lab).upper(),
+                   color=_RR_CMAP(v / 100), edgecolor="white", linewidth=1.4, zorder=3)
+        for th, lab in zip(angles, all_labs):
+            ax.text(th, 128, str(lab).upper(),
                     ha="center", va="center", fontsize=9.6,
                     fontweight="bold", color="white", alpha=0.95, zorder=4)
 
         corner = "#f472b6"
-        fig.text(0.04, 0.965, "TEAM", ha="left", va="top",
-                 fontsize=18, fontweight="900", color=corner)
-        fig.text(0.96, 0.965, "ROLE", ha="right", va="top",
-                 fontsize=18, fontweight="900", color=corner)
-        if title:
-            fig.text(0.5, 0.97, title, ha="center", va="top",
-                     fontsize=12, color="#f1f5f9", fontweight="semibold")
+        fig.text(0.04, 0.965, "TEAM",  ha="left",  va="top", fontsize=18, fontweight="900", color=corner)
+        fig.text(0.96, 0.965, "ROLE",  ha="right", va="top", fontsize=18, fontweight="900", color=corner)
         return fig
 
-    # ── Role config (player data) ─────────────────────────────────────────────────
-    def _rr_cfg(role_key: str):
+    # ── Role config — exact metrics/names from Section B ──────────────────────────
+    def _rr_get_cfg(role_key: str):
+        """Returns config dict for each role. Uses Section B metric names exactly."""
         rk = str(role_key).lower().strip()
-        if rk == "gk":
-            return dict(
-                pos_filter=lambda s: str(s).upper().strip().startswith("GK"),
-                require_cols=["Save rate, %","Prevented goals per 90","Exits per 90",
-                              "Passes per 90","Accurate passes, %","Accurate long passes, %"],
-                compute=lambda df: df.assign(
-                    **{"Save Rate":     pd.to_numeric(df["Save rate, %"], errors="coerce"),
-                       "Prevented Goals": pd.to_numeric(df["Prevented goals per 90"], errors="coerce"),
-                       "Sweeper (Exits)": pd.to_numeric(df["Exits per 90"], errors="coerce"),
-                       "Passing Volume": pd.to_numeric(df["Passes per 90"], errors="coerce"),
-                       "Pass Accuracy":  pd.to_numeric(df["Accurate passes, %"], errors="coerce"),
-                       "Long Pass Acc.": pd.to_numeric(df["Accurate long passes, %"], errors="coerce")}
-                ),
-                agg_cols=["Save Rate","Prevented Goals","Sweeper (Exits)",
-                          "Passing Volume","Pass Accuracy","Long Pass Acc."],
-                title="Goalkeepers",
-            )
+
         if rk == "cb":
-            return dict(
-                pos_filter=lambda s: str(s).upper().strip().startswith(("CB","RCB","LCB")),
-                require_cols=["Aerial duels per 90","Defensive duels per 90","Passes per 90",
-                              "Forward passes per 90","Progressive passes per 90",
-                              "Progressive runs per 90","PAdj Interceptions","Shots blocked per 90"],
-                compute=lambda df: df.assign(
-                    **{"Pass Verticality": _rr_safe_div(df["Forward passes per 90"], df["Passes per 90"]),
-                       "Passing Volume":   pd.to_numeric(df["Passes per 90"], errors="coerce"),
-                       "Positional Demand": pd.to_numeric(df["PAdj Interceptions"], errors="coerce") +
-                                            pd.to_numeric(df["Shots blocked per 90"], errors="coerce"),
-                       "Defensive Volume": pd.to_numeric(df["Defensive duels per 90"], errors="coerce"),
-                       "Progression":      pd.to_numeric(df["Progressive passes per 90"], errors="coerce") +
-                                            pd.to_numeric(df["Progressive runs per 90"], errors="coerce"),
-                       "Aerial Volume":    pd.to_numeric(df["Aerial duels per 90"], errors="coerce")}
-                ),
-                agg_cols=["Passing Volume","Pass Verticality","Progression",
-                          "Defensive Volume","Positional Demand","Aerial Volume"],
-                title="Center Backs",
-            )
+            require = ["Aerial duels per 90","Defensive duels per 90","Passes per 90",
+                       "Forward passes per 90","Progressive passes per 90",
+                       "Progressive runs per 90","PAdj Interceptions","Shots blocked per 90"]
+            def pos_ok_cb(s): s = str(s).upper().strip(); return s.startswith(("CB","RCB","LCB"))
+            def compute_cb(df):
+                out = df.copy()
+                out["Pass Verticality"]   = _rr_safe_div(out["Forward passes per 90"], out["Passes per 90"])
+                out["Pass Volume"]        = pd.to_numeric(out["Passes per 90"], errors="coerce")
+                out["Positional Demand"]  = (pd.to_numeric(out["PAdj Interceptions"], errors="coerce") +
+                                              pd.to_numeric(out["Shots blocked per 90"], errors="coerce"))
+                out["Defensive Volume"]   = pd.to_numeric(out["Defensive duels per 90"], errors="coerce")
+                out["Progression Volume"] = (pd.to_numeric(out["Progressive passes per 90"], errors="coerce") +
+                                              pd.to_numeric(out["Progressive runs per 90"], errors="coerce"))
+                out["Aerial Volume"]      = pd.to_numeric(out["Aerial duels per 90"], errors="coerce")
+                return out
+            return dict(pos_filter=pos_ok_cb, require_cols=require, compute_metrics=compute_cb,
+                        agg_cols=["Pass Volume","Pass Verticality","Progression Volume",
+                                  "Defensive Volume","Positional Demand","Aerial Volume"],
+                        title="Center Backs")
+
         if rk == "fb":
-            return dict(
-                pos_filter=lambda s: str(s).upper().strip().startswith(("LB","LWB","RB","RWB")),
-                require_cols=["Passes per 90","Forward passes per 90","Progressive passes per 90",
-                              "Progressive runs per 90","Defensive duels per 90","PAdj Interceptions",
-                              "Aerial duels per 90","xA per 90","Crosses per 90",
-                              "Touches in box per 90","Shots per 90",
-                              "Passes to penalty area per 90","Accurate passes, %","Dribbles per 90"],
-                compute=lambda df: df.assign(
-                    **{"Pass Verticality":     _rr_safe_div(df["Forward passes per 90"], df["Passes per 90"]),
-                       "Progression":          pd.to_numeric(df["Progressive passes per 90"], errors="coerce") +
-                                               pd.to_numeric(df["Progressive runs per 90"], errors="coerce"),
-                       "Ball Carrying":        0.6*pd.to_numeric(df["Dribbles per 90"], errors="coerce") +
-                                               0.4*pd.to_numeric(df["Progressive runs per 90"], errors="coerce"),
-                       "Attack Contribution":  0.4*pd.to_numeric(df["xA per 90"], errors="coerce") +
-                                               0.2*pd.to_numeric(df["Crosses per 90"], errors="coerce") +
-                                               0.2*pd.to_numeric(df["Touches in box per 90"], errors="coerce") +
-                                               0.1*pd.to_numeric(df["Shots per 90"], errors="coerce") +
-                                               0.1*pd.to_numeric(df["Passes to penalty area per 90"], errors="coerce"),
-                       "Defensive Volume":     0.5*pd.to_numeric(df["Defensive duels per 90"], errors="coerce") +
-                                               0.3*pd.to_numeric(df["PAdj Interceptions"], errors="coerce") +
-                                               0.2*pd.to_numeric(df["Aerial duels per 90"], errors="coerce"),
-                       "Retention":            pd.to_numeric(df["Accurate passes, %"], errors="coerce")}
-                ),
-                agg_cols=["Defensive Volume","Pass Verticality","Progression",
-                          "Ball Carrying","Attack Contribution","Retention"],
-                title="Fullbacks",
-            )
+            require = ["Passes per 90","Forward passes per 90","Progressive passes per 90",
+                       "Progressive runs per 90","Defensive duels per 90","PAdj Interceptions",
+                       "Aerial duels per 90","xA per 90","Crosses per 90",
+                       "Touches in box per 90","Shots per 90",
+                       "Passes to penalty area per 90","Accurate passes, %","Dribbles per 90"]
+            def pos_ok_fb(s): s = str(s).upper().strip(); return s.startswith(("LB","LWB","RB","RWB"))
+            def compute_fb(df):
+                out = df.copy()
+                out["Pass Verticality"]       = _rr_safe_div(out["Forward passes per 90"], out["Passes per 90"])
+                out["Progression Volume"]     = (pd.to_numeric(out["Progressive passes per 90"], errors="coerce") +
+                                                  pd.to_numeric(out["Progressive runs per 90"], errors="coerce"))
+                out["Ball Carrying"]          = (0.6*pd.to_numeric(out["Dribbles per 90"], errors="coerce") +
+                                                  0.4*pd.to_numeric(out["Progressive runs per 90"], errors="coerce"))
+                out["Attacking Contribution"] = (0.4*pd.to_numeric(out["xA per 90"], errors="coerce") +
+                                                  0.2*pd.to_numeric(out["Crosses per 90"], errors="coerce") +
+                                                  0.2*pd.to_numeric(out["Touches in box per 90"], errors="coerce") +
+                                                  0.1*pd.to_numeric(out["Shots per 90"], errors="coerce") +
+                                                  0.1*pd.to_numeric(out["Passes to penalty area per 90"], errors="coerce"))
+                out["Defensive Volume"]       = (0.5*pd.to_numeric(out["Defensive duels per 90"], errors="coerce") +
+                                                  0.3*pd.to_numeric(out["PAdj Interceptions"], errors="coerce") +
+                                                  0.2*pd.to_numeric(out["Aerial duels per 90"], errors="coerce"))
+                out["Pass Volume"]            = pd.to_numeric(out["Passes per 90"], errors="coerce")
+                out["Retention"]              = pd.to_numeric(out["Accurate passes, %"], errors="coerce")
+                return out
+            return dict(pos_filter=pos_ok_fb, require_cols=require, compute_metrics=compute_fb,
+                        agg_cols=["Pass Volume","Pass Verticality","Progression Volume",
+                                  "Ball Carrying","Attacking Contribution","Defensive Volume","Retention"],
+                        title="Fullbacks")
+
         if rk == "cm":
-            return dict(
-                pos_filter=lambda s: str(s).upper().strip().startswith(("DMF","LDMF","RDMF","LCMF","RCMF","CMF")),
-                require_cols=["Passes per 90","Forward passes per 90","Progressive passes per 90",
-                              "Progressive runs per 90","Defensive duels per 90",
-                              "PAdj Interceptions","Accurate passes, %"],
-                compute=lambda df: df.assign(
-                    **{"Pass Verticality": _rr_safe_div(df["Forward passes per 90"], df["Passes per 90"]),
-                       "Pass Volume":      pd.to_numeric(df["Passes per 90"], errors="coerce"),
-                       "Progression":      pd.to_numeric(df["Progressive passes per 90"], errors="coerce") +
-                                           pd.to_numeric(df["Progressive runs per 90"], errors="coerce"),
-                       "Defensive Volume": pd.to_numeric(df["Defensive duels per 90"], errors="coerce"),
-                       "Interceptions":    pd.to_numeric(df["PAdj Interceptions"], errors="coerce"),
-                       "Retention":        pd.to_numeric(df["Accurate passes, %"], errors="coerce")}
-                ),
-                agg_cols=["Defensive Volume","Pass Volume","Progression",
-                          "Retention","Pass Verticality","Interceptions"],
-                title="Central Midfielders",
-            )
-        if rk == "att":
-            return dict(
-                pos_filter=lambda s: (lambda m: m in ("RW","LW") or
-                    m.startswith(("RWF","LWF","LAMF","RAMF","AMF"))
-                )(_re_rr.split(r"[/,]", str(s).upper().strip())[0].strip().split()[0]),
-                require_cols=["Accurate passes, %","xG per 90","Non-penalty goals per 90",
-                              "Touches in box per 90","xA per 90","Passes to penalty area per 90",
-                              "Passes per 90","Progressive passes per 90","Passes to final third per 90",
-                              "Dribbles per 90","Progressive runs per 90"],
-                compute=lambda df: df.assign(
-                    **{"Goal Threat":    0.4*pd.to_numeric(df["xG per 90"], errors="coerce") +
-                                        0.4*pd.to_numeric(df["Non-penalty goals per 90"], errors="coerce") +
-                                        0.2*pd.to_numeric(df["Touches in box per 90"], errors="coerce"),
-                       "Creative Threat": 0.65*pd.to_numeric(df["xA per 90"], errors="coerce") +
-                                         0.35*pd.to_numeric(df["Passes to penalty area per 90"], errors="coerce"),
-                       "Pass Volume":    pd.to_numeric(df["Passes per 90"], errors="coerce"),
-                       "Deep Playmaking": 0.5*pd.to_numeric(df["Progressive passes per 90"], errors="coerce") +
-                                          0.5*pd.to_numeric(df["Passes to final third per 90"], errors="coerce"),
-                       "Ball Carrying":  0.6*pd.to_numeric(df["Dribbles per 90"], errors="coerce") +
-                                         0.4*pd.to_numeric(df["Progressive runs per 90"], errors="coerce"),
-                       "Retention":      pd.to_numeric(df["Accurate passes, %"], errors="coerce")}
-                ),
-                agg_cols=["Pass Volume","Deep Playmaking","Ball Carrying",
-                          "Goal Threat","Creative Threat","Retention"],
-                title="Attackers (W/AM)",
-            )
-        if rk == "st":
-            return dict(
-                pos_filter=lambda s: str(s).upper().strip().startswith("CF"),
-                require_cols=["Touches in box per 90","xG per 90","Dribbles per 90",
-                              "Progressive runs per 90","Aerial duels per 90",
-                              "Aerial duels won, %","Passes per 90","Accurate passes, %"],
-                compute=lambda df: df.assign(
-                    **{"Opportunities":  0.7*pd.to_numeric(df["Touches in box per 90"], errors="coerce") +
-                                         0.3*pd.to_numeric(df["xG per 90"], errors="coerce"),
-                       "Ball Carrying":  0.65*pd.to_numeric(df["Dribbles per 90"], errors="coerce") +
-                                         0.35*pd.to_numeric(df["Progressive runs per 90"], errors="coerce"),
-                       "Aerial Volume":  pd.to_numeric(df["Aerial duels per 90"], errors="coerce") *
-                                         pd.to_numeric(df["Aerial duels won, %"], errors="coerce") / 100.0,
-                       "Pass Volume":    pd.to_numeric(df["Passes per 90"], errors="coerce"),
-                       "Retention":      pd.to_numeric(df["Accurate passes, %"], errors="coerce")}
-                ),
-                agg_cols=["Opportunities","Ball Carrying","Aerial Volume","Pass Volume","Retention"],
-                title="Strikers (CF)",
-            )
+            require = ["Passes per 90","Forward passes per 90","Progressive passes per 90",
+                       "Progressive runs per 90","Defensive duels per 90",
+                       "PAdj Interceptions","Touches in box per 90","Shots per 90","Accurate passes, %"]
+            def pos_ok_cm(s): s = str(s).upper().strip(); return s.startswith(("DMF","LDMF","RDMF","LCMF","RCMF","CMF"))
+            def compute_cm(df):
+                out = df.copy()
+                out["Pass Verticality"]    = _rr_safe_div(out["Forward passes per 90"], out["Passes per 90"])
+                out["Pass Volume"]         = pd.to_numeric(out["Passes per 90"], errors="coerce")
+                out["Progression Volume"]  = (pd.to_numeric(out["Progressive passes per 90"], errors="coerce") +
+                                               pd.to_numeric(out["Progressive runs per 90"], errors="coerce"))
+                out["Defensive Volume"]    = pd.to_numeric(out["Defensive duels per 90"], errors="coerce")
+                out["Interception Volume"] = pd.to_numeric(out["PAdj Interceptions"], errors="coerce")
+                out["Retention"]           = pd.to_numeric(out["Accurate passes, %"], errors="coerce")
+                return out
+            return dict(pos_filter=pos_ok_cm, require_cols=require, compute_metrics=compute_cm,
+                        agg_cols=["Pass Volume","Pass Verticality","Progression Volume",
+                                  "Defensive Volume","Interception Volume","Retention"],
+                        title="Central Midfielders")
+
+        if rk == "attack":
+            require = ["Accurate passes, %","xG per 90","Non-penalty goals per 90",
+                       "Touches in box per 90","xA per 90","Passes to penalty area per 90",
+                       "Passes per 90","Progressive passes per 90","Passes to final third per 90",
+                       "Dribbles per 90","Progressive runs per 90"]
+            def pos_ok_att(s: str) -> bool:
+                s = str(s).upper().strip()
+                main = _re_rr.split(r"[/,]", s)[0].strip().split()[0]
+                if main in ("RW","LW"): return True
+                return main.startswith(("RWF","LWF","LAMF","RAMF","AMF"))
+            def compute_att(df):
+                out = df.copy()
+                out["Retention Style"]   = pd.to_numeric(out["Accurate passes, %"], errors="coerce")
+                out["Goal Threat"]       = (0.4*pd.to_numeric(out["xG per 90"], errors="coerce") +
+                                             0.4*pd.to_numeric(out["Non-penalty goals per 90"], errors="coerce") +
+                                             0.2*pd.to_numeric(out["Touches in box per 90"], errors="coerce"))
+                out["Creativity Threat"] = (0.65*pd.to_numeric(out["xA per 90"], errors="coerce") +
+                                             0.35*pd.to_numeric(out["Passes to penalty area per 90"], errors="coerce"))
+                out["Passing Volume"]    = pd.to_numeric(out["Passes per 90"], errors="coerce")
+                out["Deeper Playmaking"] = (0.5*pd.to_numeric(out["Progressive passes per 90"], errors="coerce") +
+                                             0.5*pd.to_numeric(out["Passes to final third per 90"], errors="coerce"))
+                out["Ball Carrying"]     = (0.6*pd.to_numeric(out["Dribbles per 90"], errors="coerce") +
+                                             0.4*pd.to_numeric(out["Progressive runs per 90"], errors="coerce"))
+                return out
+            return dict(pos_filter=pos_ok_att, require_cols=require, compute_metrics=compute_att,
+                        agg_cols=["Retention Style","Goal Threat","Creativity Threat",
+                                  "Passing Volume","Deeper Playmaking","Ball Carrying"],
+                        title="Attackers")
+
+        if rk == "cf":
+            require = ["Touches in box per 90","xG per 90","Dribbles per 90",
+                       "Progressive runs per 90","Aerial duels per 90","Aerial duels won, %",
+                       "Passes per 90","Non-penalty goals per 90","Accurate passes, %"]
+            def pos_ok_cf(s): return str(s).upper().strip().startswith("CF")
+            def compute_cf(df):
+                out = df.copy()
+                out["Opportunities"]      = (0.7*pd.to_numeric(out["Touches in box per 90"], errors="coerce") +
+                                              0.3*pd.to_numeric(out["xG per 90"], errors="coerce"))
+                out["Ball Carrying"]      = (0.65*pd.to_numeric(out["Dribbles per 90"], errors="coerce") +
+                                              0.35*pd.to_numeric(out["Progressive runs per 90"], errors="coerce"))
+                out["Aerial Requirement"] = (pd.to_numeric(out["Aerial duels per 90"], errors="coerce") *
+                                              pd.to_numeric(out["Aerial duels won, %"], errors="coerce") / 100.0)
+                out["Passing Volume"]     = pd.to_numeric(out["Passes per 90"], errors="coerce")
+                out["Goal Output"]        = pd.to_numeric(out["Non-penalty goals per 90"], errors="coerce")
+                out["Retention"]          = pd.to_numeric(out["Accurate passes, %"], errors="coerce")
+                return out
+            return dict(pos_filter=pos_ok_cf, require_cols=require, compute_metrics=compute_cf,
+                        agg_cols=["Opportunities","Ball Carrying","Aerial Requirement",
+                                  "Passing Volume","Goal Output","Retention"],
+                        title="Strikers")
         return None
 
-    # ── Team style column map (auto from team CSV) ────────────────────────────────
-    # Expected team CSV columns (Wyscout team export style):
-    #   Team, League, Possession, Passes per 90, Long passes per 90,
-    #   xGA per 90, Goals conceded per 90, Pressing (PPDA or similar), xG per 90
-    _RR_TEAM_STYLE_COLS = {
-        "gk":  {"Possession": "Possession, %",
-                "Passes":     "Passes per 90",
-                "Long Balls": "Long passes per 90",
-                "xGA":        "xGA per 90",
-                "Goals vs":   "Goals conceded per 90"},
-        "cb":  {"Possession": "Possession, %",
-                "Passes":     "Passes per 90",
-                "Long Balls": "Long passes per 90",
-                "xGA":        "xGA per 90",
-                "Goals vs":   "Goals conceded per 90"},
-        "fb":  {"Possession": "Possession, %",
-                "Passes":     "Passes per 90",
-                "Pressing":   "PPDA",
-                "Long Balls": "Long passes per 90",
-                "xGA":        "xGA per 90"},
-        "cm":  {"Possession": "Possession, %",
-                "Passes":     "Passes per 90",
-                "Pressing":   "PPDA",
-                "Long Balls": "Long passes per 90",
-                "Passes F3rd":"Passes to final third per 90"},
-        "att": {"Possession": "Possession, %",
-                "Passes":     "Passes per 90",
-                "Pressing":   "PPDA",
-                "Long Balls": "Long passes per 90",
-                "xG":         "xG per 90"},
-        "st":  {"Possession": "Possession, %",
-                "Passes":     "Passes per 90",
-                "Pressing":   "PPDA",
-                "Long Balls": "Long passes per 90",
-                "xG":         "xG per 90"},
+    # ── Team style CSV column mapping ──────────────────────────────────────────────
+    _RR_TEAM_COLS = {
+        "cb":     {"Possession":  "Possession, %",
+                   "Passes":      "Passes per 90",
+                   "Long Balls":  "Long passes per 90",
+                   "xGA":         "xGA per 90",
+                   "Goals vs":    "Goals conceded per 90"},
+        "fb":     {"Possession":  "Possession, %",
+                   "Passes":      "Passes per 90",
+                   "Pressing":    "PPDA",
+                   "Long Balls":  "Long passes per 90",
+                   "xGA":         "xGA per 90"},
+        "cm":     {"Possession":  "Possession, %",
+                   "Passes":      "Passes per 90",
+                   "Pressing":    "PPDA",
+                   "Long Balls":  "Long passes per 90",
+                   "Passes F3rd": "Passes to final third per 90"},
+        "attack": {"Possession":  "Possession, %",
+                   "Passes":      "Passes per 90",
+                   "Pressing":    "PPDA",
+                   "Long Balls":  "Long passes per 90",
+                   "xG":          "xG per 90"},
+        "cf":     {"Possession":  "Possession, %",
+                   "Passes":      "Passes per 90",
+                   "Pressing":    "PPDA",
+                   "Long Balls":  "Long passes per 90",
+                   "xG":          "xG per 90"},
     }
-    # For PPDA: lower = more pressing. We invert it for the radar (higher = more pressing).
-    _RR_INVERT_COLS = {"PPDA"}
+    _RR_INVERT_COLS = {"PPDA"}  # lower PPDA = more pressing = better
 
-    def _rr_team_pcts(team_df, team_name, col_map, invert=_RR_INVERT_COLS):
-        """Compute team style percentiles vs all teams in the uploaded CSV."""
-        labels = list(col_map.keys())
-        pcts = []
+    def _rr_compute_team_pcts(team_df, team_name, col_map):
+        labels, pcts = [], []
         for lab, col in col_map.items():
+            labels.append(lab)
             if col not in team_df.columns:
-                pcts.append(50)
-                continue
+                pcts.append(50); continue
             vals = pd.to_numeric(team_df[col], errors="coerce").fillna(0)
-            row_idx = team_df[team_df["Team"].astype(str) == str(team_name)].index
-            if row_idx.empty:
-                pcts.append(50)
-                continue
-            v = float(vals.loc[row_idx[0]])
-            from scipy.stats import rankdata as _rdt_rr
-            ranked = _rdt_rr(vals.values) / len(vals)
-            pct = float(ranked[vals.index.get_loc(row_idx[0])]) * 100
-            if col in invert:
-                pct = 100 - pct  # lower PPDA = more pressing = higher percentile
+            rows = team_df[team_df["Team"].astype(str) == str(team_name)]
+            if rows.empty:
+                pcts.append(50); continue
+            v      = float(vals.loc[rows.index[0]])
+            ranked = _rankdata_rr(vals.values) / len(vals)
+            pct    = float(ranked[vals.index.get_loc(rows.index[0])]) * 100
+            if col in _RR_INVERT_COLS:
+                pct = 100 - pct
             pcts.append(int(round(pct)))
         return labels, pcts
 
-    # ── Role-data computation helper ──────────────────────────────────────────────
-    def _rr_role_pcts(player_df, league, team_name, cfg, min_mins=300):
-        """Compute team-average role percentiles vs all teams in league."""
-        from scipy.stats import rankdata as _rdt_rr2
+    def _rr_compute_role_pcts_team(player_df, league, team, cfg, min_mins):
         ldf = player_df[player_df["League"].astype(str) == str(league)].copy()
         miss = [c for c in cfg["require_cols"] if c not in ldf.columns]
         if miss:
             return None, f"Missing columns: {', '.join(miss)}"
-        ldf = ldf[ldf["Position"].apply(cfg["pos_filter"])].copy()
         ldf["Minutes played"] = pd.to_numeric(ldf["Minutes played"], errors="coerce")
+        ldf = ldf[ldf["Position"].apply(cfg["pos_filter"])].copy()
+        ldf = ldf[ldf["Minutes played"].fillna(0) >= min_mins]
+        if ldf.empty:
+            return None, f"No eligible {cfg['title']} in {league} with ≥{min_mins} mins."
+        ldf = cfg["compute_metrics"](ldf)
+        agg = ldf.groupby("Team")[cfg["agg_cols"]].mean().reset_index()
+        if team not in agg["Team"].values:
+            return None, f"'{team}' has no eligible {cfg['title']} in filtered pool."
+        pcts = []
+        for met in cfg["agg_cols"]:
+            tmp = agg[["Team", met]].sort_values(met, ascending=False).reset_index(drop=True)
+            rk  = int(tmp.index[tmp["Team"] == team][0]) + 1
+            pcts.append(_rr_pct_from_rank(rk, len(tmp)))
+        return pcts, None
+
+    def _rr_compute_role_pcts_player(player_df, league, team, player_name, cfg, min_mins):
+        ldf = player_df[player_df["League"].astype(str) == str(league)].copy()
+        miss = [c for c in cfg["require_cols"] if c not in ldf.columns]
+        if miss:
+            return None, f"Missing columns: {', '.join(miss)}"
+        ldf["Minutes played"] = pd.to_numeric(ldf["Minutes played"], errors="coerce")
+        ldf = ldf[ldf["Position"].apply(cfg["pos_filter"])].copy()
         ldf = ldf[ldf["Minutes played"].fillna(0) >= min_mins]
         if ldf.empty:
             return None, "No eligible players after filtering."
-        ldf = cfg["compute"](ldf)
-        agg = ldf.groupby("Team")[cfg["agg_cols"]].mean().reset_index()
-        if team_name not in agg["Team"].values:
-            return None, f"Team '{team_name}' not found in league pool."
-        rows = []
+        ldf = cfg["compute_metrics"](ldf)
+        prow = ldf[ldf["Player"].astype(str) == str(player_name)]
+        if prow.empty:
+            return None, f"'{player_name}' not found in filtered pool."
+        pcts = []
         for met in cfg["agg_cols"]:
-            vals = agg[met].fillna(0)
-            v = float(agg.loc[agg["Team"] == team_name, met].iloc[0])
-            pseudo = pd.concat([agg[["Team", met]],
-                                 pd.DataFrame({"Team": [team_name + "_"], met: [v]})],
-                                ignore_index=True)
-            pseudo = pseudo.drop_duplicates("Team", keep="first")
-            pseudo = pseudo.sort_values(met, ascending=False).reset_index(drop=True)
-            rk = int(pseudo.index[pseudo["Team"] == team_name][0]) + 1
-            tot = int(pseudo.shape[0])
-            rows.append(_rr_pct_from_rank(rk, tot))
-        return rows, None
+            if met not in ldf.columns:
+                pcts.append(50); continue
+            vals   = ldf[met].fillna(0).values
+            v      = float(prow[met].iloc[0])
+            all_v  = np.append(vals, v)
+            ranked = _rankdata_rr(all_v) / len(all_v)
+            pcts.append(int(round(ranked[-1] * 100)))
+        return pcts, None
 
     # ═══════════════════════════════════════════════════════════════════════════════
-    # SECTION 1 — Role Requirements (player data only, polar radar)
+    # SECTION 1 — Role Requirements (player data only)
     # ═══════════════════════════════════════════════════════════════════════════════
     st.markdown("---")
     st.header("📊 Role Requirements")
-    st.caption("Team average vs league — polar radar by position role")
+    st.caption(f"Team average vs league · {sel_team} · {_arch_team_league}")
 
-    _RR_POS_TABS = ["GK", "CB", "FB", "CM", "ATT", "ST"]
-    _RR_KEY_MAP  = {"GK":"gk","CB":"cb","FB":"fb","CM":"cm","ATT":"att","ST":"st"}
-    _rr_tabs = st.tabs(_RR_POS_TABS)
+    _RR_TAB_KEYS   = ["cb", "fb", "cm", "attack", "cf"]
+    _RR_TAB_LABELS = ["Center Backs", "Fullbacks", "Central Midfielders", "Attackers", "Strikers"]
 
-    for _rr_tab, _rr_pos_label in zip(_rr_tabs, _RR_POS_TABS):
-        with _rr_tab:
-            _rr_rk = _RR_KEY_MAP[_rr_pos_label]
-            _rr_cfg = _rr_cfg(_rr_rk)
-            if _rr_cfg is None:
+    _rr1_tabs = st.tabs(_RR_TAB_LABELS)
+    for _rr1_tab, _rr1_rk in zip(_rr1_tabs, _RR_TAB_KEYS):
+        with _rr1_tab:
+            _rr1_role_cfg = _rr_get_cfg(_rr1_rk)
+            if _rr1_role_cfg is None:
                 st.info("Config not available.")
                 continue
 
-            _rr_c1, _rr_c2 = st.columns([1, 2])
-            with _rr_c1:
-                _rr_min_mins_1 = st.slider("Min minutes", 0, 5000, 300, 50,
-                                            key=f"rr1_mins_{_rr_rk}")
-                _rr_mode_1 = st.radio("Compare", ["Team average", "Specific player"],
-                                       horizontal=True, key=f"rr1_mode_{_rr_rk}")
+            _rr1_c1, _rr1_c2 = st.columns([1, 2])
+            with _rr1_c1:
+                _rr1_min_mins = st.slider("Min minutes", 0, 5000, 750, 50, key=f"rr1_mins_{_rr1_rk}")
+                _rr1_mode     = st.radio("Compare", ["Team average", "Specific player"],
+                                          horizontal=True, key=f"rr1_mode_{_rr1_rk}")
 
-            _rr_pcts, _rr_err = _rr_role_pcts(
-                df_players, _arch_team_league, sel_team, _rr_cfg, _rr_min_mins_1
-            )
-            if _rr_err:
-                st.info(_rr_err)
-                continue
-
-            if _rr_mode_1 == "Specific player":
-                _rr_elig = df_players[
+            if _rr1_mode == "Team average":
+                _rr1_pcts, _rr1_err = _rr_compute_role_pcts_team(
+                    df_players, _arch_team_league, sel_team, _rr1_role_cfg, _rr1_min_mins
+                )
+                _rr1_subtitle = f"{sel_team} AVG vs {_arch_team_league} {_rr1_role_cfg['title']}"
+            else:
+                _rr1_elig = df_players[
                     (df_players["League"].astype(str) == str(_arch_team_league)) &
                     (df_players["Team"].astype(str) == str(sel_team)) &
-                    df_players["Position"].apply(_rr_cfg["pos_filter"])
+                    df_players["Position"].apply(_rr1_role_cfg["pos_filter"])
                 ].copy()
-                _rr_elig["Minutes played"] = pd.to_numeric(_rr_elig["Minutes played"], errors="coerce")
-                _rr_elig = _rr_elig[_rr_elig["Minutes played"].fillna(0) >= _rr_min_mins_1]
-                if _rr_elig.empty:
-                    st.info(f"No eligible {_rr_cfg['title']} on {sel_team}.")
+                _rr1_elig["Minutes played"] = pd.to_numeric(_rr1_elig["Minutes played"], errors="coerce")
+                _rr1_elig = _rr1_elig[_rr1_elig["Minutes played"].fillna(0) >= _rr1_min_mins]
+                if _rr1_elig.empty:
+                    st.info(f"No eligible {_rr1_role_cfg['title']} on {sel_team} with ≥{_rr1_min_mins} mins.")
                     continue
-                _rr_elig = _rr_cfg["compute"](_rr_elig)
-                _rr_player_sel = st.selectbox("Player", sorted(_rr_elig["Player"].astype(str).unique()),
-                                               key=f"rr1_player_{_rr_rk}")
-                _rr_prow = _rr_elig[_rr_elig["Player"].astype(str) == _rr_player_sel].head(1)
-                if _rr_prow.empty:
-                    continue
-                # Re-rank player vs league
-                _rr_ldf2 = df_players[df_players["League"].astype(str) == str(_arch_team_league)].copy()
-                _rr_ldf2 = _rr_ldf2[_rr_ldf2["Position"].apply(_rr_cfg["pos_filter"])].copy()
-                _rr_ldf2["Minutes played"] = pd.to_numeric(_rr_ldf2["Minutes played"], errors="coerce")
-                _rr_ldf2 = _rr_ldf2[_rr_ldf2["Minutes played"].fillna(0) >= _rr_min_mins_1]
-                _rr_ldf2 = _rr_cfg["compute"](_rr_ldf2)
-                from scipy.stats import rankdata as _rdt_rr3
-                _rr_pcts = []
-                for _rr_met in _rr_cfg["agg_cols"]:
-                    if _rr_met not in _rr_ldf2.columns:
-                        _rr_pcts.append(50); continue
-                    _rr_vals = _rr_ldf2[_rr_met].fillna(0).values
-                    _rr_v = float(_rr_prow[_rr_met].iloc[0])
-                    _rr_all = np.append(_rr_vals, _rr_v)
-                    _rr_ranked = _rdt_rr3(_rr_all) / len(_rr_all)
-                    _rr_pcts.append(int(round(_rr_ranked[-1] * 100)))
-                _rr_radar_title = f"{_rr_player_sel} vs {_arch_team_league} {_rr_cfg['title']}"
-            else:
-                _rr_radar_title = f"{sel_team} AVG vs {_arch_team_league} {_rr_cfg['title']}"
+                _rr1_player_sel = st.selectbox(
+                    "Player", sorted(_rr1_elig["Player"].astype(str).unique()),
+                    key=f"rr1_player_{_rr1_rk}"
+                )
+                _rr1_pcts, _rr1_err = _rr_compute_role_pcts_player(
+                    df_players, _arch_team_league, sel_team, _rr1_player_sel,
+                    _rr1_role_cfg, _rr1_min_mins
+                )
+                _rr1_subtitle = f"{_rr1_player_sel} vs {_arch_team_league} {_rr1_role_cfg['title']}"
 
-            _rr_fig1 = _rr_polar_bars(_rr_cfg["agg_cols"], _rr_pcts, title=_rr_radar_title)
-            with _rr_c2:
-                st.pyplot(_rr_fig1, use_container_width=True)
-            _rr_buf1 = _BytesIO_rr()
-            _rr_fig1.savefig(_rr_buf1, format="png", dpi=300, bbox_inches="tight",
-                              facecolor=_rr_fig1.get_facecolor())
-            _rr_buf1.seek(0)
+            if _rr1_err:
+                st.info(_rr1_err)
+                continue
+
+            _rr1_fig = _rr_polar_bars_fig(_rr1_role_cfg["agg_cols"], _rr1_pcts)
+            _rr1_fig.text(0.5, 0.97, _rr1_subtitle,
+                          ha="center", va="top", fontsize=12,
+                          color="#f1f5f9", fontweight="semibold")
+            with _rr1_c2:
+                st.pyplot(_rr1_fig, use_container_width=True)
+            _rr1_buf = _BytesIO_rr()
+            _rr1_fig.savefig(_rr1_buf, format="png", dpi=300, bbox_inches="tight",
+                              facecolor=_rr1_fig.get_facecolor())
+            _rr1_buf.seek(0)
             st.download_button(
-                f"⬇️ Download {_rr_cfg['title']} radar",
-                data=_rr_buf1.getvalue(),
-                file_name=f"role_req_{_rr_rk}_{sel_team.replace(' ','_')}_{_uuid_rr.uuid4().hex[:6]}.png",
+                f"⬇️ Download {_rr1_role_cfg['title']} radar",
+                data=_rr1_buf.getvalue(),
+                file_name=f"role_req_{_rr1_rk}_{sel_team.replace(' ','_')}_{_uuid_rr.uuid4().hex[:6]}.png",
                 mime="image/png",
-                key=f"rr1_dl_{_rr_rk}",
+                key=f"rr1_dl_{_rr1_rk}",
             )
-            plt.close(_rr_fig1)
+            plt.close(_rr1_fig)
 
     # ═══════════════════════════════════════════════════════════════════════════════
-    # SECTION 2 — Role Requirements + Team Style (split radar, auto team CSV)
+    # SECTION 2 — Role Requirements + Team Style (split radar, auto CSV)
     # ═══════════════════════════════════════════════════════════════════════════════
     st.markdown("---")
     st.header("📊 Role Requirements & Team Style")
-    st.caption("Upload a team-stats CSV to auto-compute team style percentiles — no manual entry needed.")
-
-    _rr2_upload = st.file_uploader(
-        "Upload team stats CSV (one row per team — needs: Team, League, Possession %, "
-        "Passes per 90, Long passes per 90, xGA per 90, Goals conceded per 90, "
-        "PPDA, xG per 90, Passes to final third per 90)",
-        type=["csv"],
-        key="rr2_upload",
+    st.caption(
+        "Upload a Wyscout team stats CSV (one row per team). "
+        "Expected columns: Team, Possession %, Passes per 90, Long passes per 90, "
+        "xGA per 90, Goals conceded per 90, PPDA, xG per 90, Passes to final third per 90."
     )
 
-    if _rr2_upload is not None:
+    _rr2_file = st.file_uploader("Team stats CSV", type=["csv"], key="rr2_upload")
+    _rr2_team_df = None
+    if _rr2_file is not None:
         try:
-            _rr2_team_df = pd.read_csv(_rr2_upload)
-        except Exception as _e:
-            st.error(f"Could not read CSV: {_e}")
-            _rr2_team_df = None
-    else:
-        _rr2_team_df = None
+            _rr2_team_df = pd.read_csv(_rr2_file)
+        except Exception as _rr2_e:
+            st.error(f"Could not read CSV: {_rr2_e}")
 
     if _rr2_team_df is None:
-        st.info("Upload a team stats CSV above to enable this section.")
+        st.info("Upload a team stats CSV above to enable the split radar.")
     else:
-        # Try to find the selected team in the CSV
-        _rr2_teams_in_csv = _rr2_team_df["Team"].astype(str).tolist() if "Team" in _rr2_team_df.columns else []
-        _rr2_matched = sel_team if sel_team in _rr2_teams_in_csv else None
-
-        if _rr2_matched is None:
-            # Fuzzy fallback — first partial match
+        _rr2_csv_teams = (_rr2_team_df["Team"].astype(str).tolist()
+                          if "Team" in _rr2_team_df.columns else [])
+        if sel_team in _rr2_csv_teams:
+            _rr2_matched = sel_team
+        else:
             _rr2_matched = next(
-                (t for t in _rr2_teams_in_csv if sel_team.lower()[:6] in t.lower()), None
+                (t for t in _rr2_csv_teams if sel_team.lower()[:5] in t.lower()), None
             )
             if _rr2_matched:
-                st.caption(f"ℹ️ Matched '{sel_team}' → '{_rr2_matched}' in CSV.")
+                st.caption(f"ℹ️ Matched **{sel_team}** → **{_rr2_matched}** in CSV.")
 
-        if _rr2_matched is None:
-            _rr2_matched = st.selectbox(
+        if not _rr2_matched:
+            _rr2_pick = st.selectbox(
                 f"'{sel_team}' not found in CSV — select the matching team:",
-                ["(none)"] + sorted(_rr2_teams_in_csv),
-                key="rr2_team_match",
+                ["(none)"] + sorted(_rr2_csv_teams), key="rr2_team_match"
             )
-            if _rr2_matched == "(none)":
-                _rr2_matched = None
+            _rr2_matched = None if _rr2_pick == "(none)" else _rr2_pick
 
         if _rr2_matched:
-            _rr2_tabs = st.tabs(_RR_POS_TABS)
-            for _rr2_tab, _rr2_pos_label in zip(_rr2_tabs, _RR_POS_TABS):
+            _rr2_tabs = st.tabs(_RR_TAB_LABELS)
+            for _rr2_tab, _rr2_rk in zip(_rr2_tabs, _RR_TAB_KEYS):
                 with _rr2_tab:
-                    _rr2_rk = _RR_KEY_MAP[_rr2_pos_label]
-                    _rr2_cfg = _rr_cfg(_rr2_rk)
-                    if _rr2_cfg is None:
+                    _rr2_role_cfg = _rr_get_cfg(_rr2_rk)
+                    if _rr2_role_cfg is None:
                         st.info("Config not available.")
                         continue
 
                     _rr2_c1, _rr2_c2 = st.columns([1, 2])
                     with _rr2_c1:
-                        _rr2_min_mins = st.slider("Min minutes", 0, 5000, 300, 50,
-                                                   key=f"rr2_mins_{_rr2_rk}")
-                        _rr2_mode = st.radio("Compare", ["Team average", "Specific player"],
-                                              horizontal=True, key=f"rr2_mode_{_rr2_rk}")
+                        _rr2_min_mins = st.slider("Min minutes", 0, 5000, 750, 50, key=f"rr2_mins_{_rr2_rk}")
+                        _rr2_mode     = st.radio("Compare", ["Team average", "Specific player"],
+                                                  horizontal=True, key=f"rr2_mode_{_rr2_rk}")
 
-                    # Role pcts
-                    _rr2_role_pcts, _rr2_err = _rr_role_pcts(
-                        df_players, _arch_team_league, sel_team, _rr2_cfg, _rr2_min_mins
-                    )
-                    if _rr2_err:
-                        st.info(_rr2_err)
-                        continue
-
-                    if _rr2_mode == "Specific player":
+                    if _rr2_mode == "Team average":
+                        _rr2_role_pcts, _rr2_err = _rr_compute_role_pcts_team(
+                            df_players, _arch_team_league, sel_team, _rr2_role_cfg, _rr2_min_mins
+                        )
+                        _rr2_subtitle = f"{sel_team} AVG (role) · {_rr2_matched} (team style)"
+                    else:
                         _rr2_elig = df_players[
                             (df_players["League"].astype(str) == str(_arch_team_league)) &
                             (df_players["Team"].astype(str) == str(sel_team)) &
-                            df_players["Position"].apply(_rr2_cfg["pos_filter"])
+                            df_players["Position"].apply(_rr2_role_cfg["pos_filter"])
                         ].copy()
                         _rr2_elig["Minutes played"] = pd.to_numeric(_rr2_elig["Minutes played"], errors="coerce")
                         _rr2_elig = _rr2_elig[_rr2_elig["Minutes played"].fillna(0) >= _rr2_min_mins]
                         if _rr2_elig.empty:
-                            st.info(f"No eligible {_rr2_cfg['title']} on {sel_team}.")
+                            st.info(f"No eligible {_rr2_role_cfg['title']} on {sel_team} with ≥{_rr2_min_mins} mins.")
                             continue
-                        _rr2_elig = _rr2_cfg["compute"](_rr2_elig)
                         _rr2_player_sel = st.selectbox(
                             "Player", sorted(_rr2_elig["Player"].astype(str).unique()),
                             key=f"rr2_player_{_rr2_rk}"
                         )
-                        _rr2_prow = _rr2_elig[_rr2_elig["Player"].astype(str) == _rr2_player_sel].head(1)
-                        if _rr2_prow.empty:
-                            continue
-                        _rr2_ldf2 = df_players[df_players["League"].astype(str) == str(_arch_team_league)].copy()
-                        _rr2_ldf2 = _rr2_ldf2[_rr2_ldf2["Position"].apply(_rr2_cfg["pos_filter"])].copy()
-                        _rr2_ldf2["Minutes played"] = pd.to_numeric(_rr2_ldf2["Minutes played"], errors="coerce")
-                        _rr2_ldf2 = _rr2_ldf2[_rr2_ldf2["Minutes played"].fillna(0) >= _rr2_min_mins]
-                        _rr2_ldf2 = _rr2_cfg["compute"](_rr2_ldf2)
-                        from scipy.stats import rankdata as _rdt_rr4
-                        _rr2_role_pcts = []
-                        for _rr2_met in _rr2_cfg["agg_cols"]:
-                            if _rr2_met not in _rr2_ldf2.columns:
-                                _rr2_role_pcts.append(50); continue
-                            _rr2_vals = _rr2_ldf2[_rr2_met].fillna(0).values
-                            _rr2_v = float(_rr2_prow[_rr2_met].iloc[0])
-                            _rr2_all = np.append(_rr2_vals, _rr2_v)
-                            from scipy.stats import rankdata as _rdt_rr4b
-                            _rr2_ranked = _rdt_rr4b(_rr2_all) / len(_rr2_all)
-                            _rr2_role_pcts.append(int(round(_rr2_ranked[-1] * 100)))
-                        _rr2_radar_title = f"{_rr2_player_sel} (role) + {_rr2_matched} (team style)"
-                    else:
-                        _rr2_radar_title = f"{sel_team} AVG (role) + {_rr2_matched} (team style)"
+                        _rr2_role_pcts, _rr2_err = _rr_compute_role_pcts_player(
+                            df_players, _arch_team_league, sel_team, _rr2_player_sel,
+                            _rr2_role_cfg, _rr2_min_mins
+                        )
+                        _rr2_subtitle = f"{_rr2_player_sel} (role) · {_rr2_matched} (team style)"
 
-                    # Team style pcts from CSV
-                    _rr2_col_map = _RR_TEAM_STYLE_COLS.get(_rr2_rk, {})
-                    _rr2_team_labels, _rr2_team_pcts = _rr_team_pcts(
+                    if _rr2_err:
+                        st.info(_rr2_err)
+                        continue
+
+                    _rr2_col_map = _RR_TEAM_COLS.get(_rr2_rk, {})
+                    _rr2_team_labels, _rr2_team_pcts = _rr_compute_team_pcts(
                         _rr2_team_df, _rr2_matched, _rr2_col_map
                     )
 
-                    _rr2_fig = _rr_split_polar(
+                    _rr2_fig = _rr_split_polar_fig(
                         _rr2_team_labels, _rr2_team_pcts,
-                        _rr2_cfg["agg_cols"], _rr2_role_pcts,
-                        title=_rr2_radar_title,
+                        _rr2_role_cfg["agg_cols"], _rr2_role_pcts,
                     )
+                    _rr2_fig.text(0.5, 0.97, _rr2_subtitle,
+                                  ha="center", va="top", fontsize=11,
+                                  color="#f1f5f9", fontweight="semibold")
                     with _rr2_c2:
                         st.pyplot(_rr2_fig, use_container_width=True)
                     _rr2_buf = _BytesIO_rr()
@@ -4085,7 +4029,7 @@ else:
                                      facecolor=_rr2_fig.get_facecolor())
                     _rr2_buf.seek(0)
                     st.download_button(
-                        f"⬇️ Download {_rr2_cfg['title']} split radar",
+                        f"⬇️ Download {_rr2_role_cfg['title']} split radar",
                         data=_rr2_buf.getvalue(),
                         file_name=f"split_radar_{_rr2_rk}_{sel_team.replace(' ','_')}_{_uuid_rr.uuid4().hex[:6]}.png",
                         mime="image/png",

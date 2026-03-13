@@ -3360,14 +3360,9 @@ else:
     with st.expander("Scatter settings", expanded=False):
         _arch_min_mins = st.slider("Min minutes", 0, 5000, 300, 50, key="arch_mins")
         _arch_show_labels = st.toggle("Show labels", value=True, key="arch_labels")
-        _arch_label_mode  = st.selectbox(
-            "Label mode",
-            ["Team players only", "All players", "U23 only", "U21 only"],
-            index=0, key="arch_label_mode",
-        )
-        _arch_label_size = st.slider("Label size", 8, 20, 11, 1, key="arch_lblsize")
-        _arch_pt_size    = st.slider("Point size", 24, 300, 180, 2, key="arch_pts")
-        _arch_pt_alpha   = st.slider("Point opacity (others)", 0.05, 1.0, 0.25, 0.05, key="arch_alpha")
+        _arch_label_size = st.slider("Label size", 8, 20, 12, 1, key="arch_lblsize")
+        _arch_pt_size    = st.slider("Point size", 24, 300, 225, 2, key="arch_pts")
+        _arch_pt_alpha   = st.slider("Point opacity", 0.2, 1.0, 0.92, 0.02, key="arch_alpha")
         _arch_canvas = st.selectbox(
             "Canvas size",
             ["1280x720", "1600x900", "1920x820", "1920x1080"],
@@ -3447,41 +3442,32 @@ else:
     _x_col = _cfg["x_col"]; _y_col = _cfg["y_col"]
     _arch_cols = _cfg["arch_colors"]; _eff_sz = _arch_pt_size * 1.5
 
+    # All players same colour/alpha — team players drawn on top with white outline
     for _is_team_pass in [False, True]:
         _sub = _arch_pool[_arch_pool["_is_team"] == _is_team_pass]
         if _sub.empty:
             continue
-        _alpha = 1.0 if _is_team_pass else _arch_pt_alpha
-        _sz    = _eff_sz * (1.4 if _is_team_pass else 1.0)
-        _ec    = "#ffffff" if _is_team_pass else "none"
-        _ew    = 1.2 if _is_team_pass else 0
-        _zo    = 4 if _is_team_pass else 2
+        _sz  = _eff_sz * (1.4 if _is_team_pass else 1.0)
+        _ec  = "#ffffff" if _is_team_pass else "none"
+        _ew  = 1.4 if _is_team_pass else 0
+        _zo  = 4 if _is_team_pass else 2
 
         if _arch_has_box:
             for _, _r in _sub.iterrows():
                 _mk = "D" if _r["_box_flag"] else ("s" if _r["_flag"] else "o")
                 _arch_ax.scatter(_r[_x_col], _r[_y_col], s=_sz,
-                                 c=_arch_cols[_r["Archetype"]], alpha=_alpha,
+                                 c=_arch_cols[_r["Archetype"]], alpha=_arch_pt_alpha,
                                  marker=_mk, edgecolors=_ec, linewidths=_ew, zorder=_zo)
         else:
             for (_al, _fl), _gdf in _sub.groupby(["Archetype", "_flag"]):
                 _arch_ax.scatter(_gdf[_x_col], _gdf[_y_col], s=_sz,
-                                 c=_arch_cols[_al], alpha=_alpha,
+                                 c=_arch_cols[_al], alpha=_arch_pt_alpha,
                                  marker="s" if _fl else "o",
                                  edgecolors=_ec, linewidths=_ew, zorder=_zo)
 
-    # Labels
+    # Labels — team players only
     if _arch_show_labels:
-        if _arch_label_mode == "Team players only":
-            _ldf = _arch_pool[_arch_pool["_is_team"]]
-        elif _arch_label_mode == "All players":
-            _ldf = _arch_pool
-        elif _arch_label_mode == "U23 only":
-            _ldf = _arch_pool[pd.to_numeric(_arch_pool["Age"], errors="coerce") < 23]
-        elif _arch_label_mode == "U21 only":
-            _ldf = _arch_pool[pd.to_numeric(_arch_pool["Age"], errors="coerce") < 21]
-        else:
-            _ldf = _arch_pool[_arch_pool["_is_team"]]
+        _ldf = _arch_pool[_arch_pool["_is_team"]]
 
         for _, _r in _ldf.iterrows():
             _t = _arch_ax.annotate(

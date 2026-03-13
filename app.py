@@ -3534,8 +3534,7 @@ else:
     # ═══════════════════════════════════════════════════════════════════════════════
 
 # ═══════════════════════════════════════════════════════════════════════════════
-    # ROLE REQUIREMENTS — Section 1: Player-data polar radar
-    #                     Section 2: Split radar with auto team CSV
+    # ROLE REQUIREMENTS — Section 1 & 2
     # ═══════════════════════════════════════════════════════════════════════════════
 
     import re as _re_rr
@@ -3544,19 +3543,43 @@ else:
     import uuid as _uuid_rr
     from scipy.stats import rankdata as _rankdata_rr
 
-    # ── Tab style override — white text on dark background ────────────────────────
+    # ── White text CSS — broad selectors to override Streamlit dark theme ─────────
     st.markdown("""
     <style>
-    .stTabs [data-baseweb="tab"] {
+    /* Tab labels */
+    div[data-testid="stTabs"] button p,
+    div[data-testid="stTabs"] button div,
+    div[data-testid="stTabs"] button span,
+    button[data-baseweb="tab"] p,
+    button[data-baseweb="tab"] div,
+    [role="tab"] p, [role="tab"] span {
         color: #ffffff !important;
         font-weight: 700 !important;
     }
-    .stTabs [data-baseweb="tab"][aria-selected="true"] {
+    /* Active tab underline */
+    button[aria-selected="true"] p,
+    button[aria-selected="true"] span {
         color: #ef4444 !important;
-        border-bottom: 2px solid #ef4444 !important;
     }
-    .stRadio label { color: #ffffff !important; font-weight: 600 !important; }
-    .stSlider label { color: #ffffff !important; font-weight: 600 !important; }
+    /* Radio button labels */
+    div[data-testid="stRadio"] label,
+    div[data-testid="stRadio"] label p,
+    div[data-testid="stRadio"] label span {
+        color: #ffffff !important;
+        font-weight: 600 !important;
+    }
+    /* Slider label */
+    div[data-testid="stSlider"] label,
+    div[data-testid="stSlider"] label p {
+        color: #ffffff !important;
+        font-weight: 600 !important;
+    }
+    /* Selectbox label */
+    div[data-testid="stSelectbox"] label,
+    div[data-testid="stSelectbox"] label p {
+        color: #ffffff !important;
+        font-weight: 600 !important;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -3575,7 +3598,6 @@ else:
     _RR_CMAP = _LSCM_rr.from_list("rr_pct", _RR_VALUE_COLORS)
 
     def _rr_polar_bars_fig(labels, percentiles):
-        """Full polar bar radar — dark background, coloured by percentile value. No title."""
         N = len(labels)
         angles    = np.linspace(0, 2 * np.pi, N, endpoint=False)
         bar_width = (2 * np.pi / N) * 0.85
@@ -3599,7 +3621,6 @@ else:
         return fig
 
     def _rr_split_polar_fig(team_labels, team_pcts, role_labels, role_pcts):
-        """Split polar: left half = team style, right half = role requirements."""
         TEAM_TRACK = "#2b3646"; ROLE_TRACK = "#362b46"
         fig = plt.figure(figsize=(9.2, 8.2))
         fig.patch.set_facecolor("#0a0f1c")
@@ -3771,39 +3792,50 @@ else:
                         title="Strikers")
         return None
 
-    # ── Team style CSV column mapping ──────────────────────────────────────────────
+    # ── Team style column mapping ──────────────────────────────────────────────────
+    # Columns marked True are inverted (lower raw value = better percentile)
     _RR_TEAM_COLS = {
-        "cb":     {"Possession":  "Possession, %",
-                   "Passes":      "Passes per 90",
-                   "Long Balls":  "Long passes per 90",
-                   "xGA":         "xGA per 90",
-                   "Goals vs":    "Goals conceded per 90"},
-        "fb":     {"Possession":  "Possession, %",
-                   "Passes":      "Passes per 90",
-                   "Pressing":    "PPDA",
-                   "Long Balls":  "Long passes per 90",
-                   "xGA":         "xGA per 90"},
-        "cm":     {"Possession":  "Possession, %",
-                   "Passes":      "Passes per 90",
-                   "Pressing":    "PPDA",
-                   "Long Balls":  "Long passes per 90",
-                   "Passes F3rd": "Passes to final third per 90"},
-        "attack": {"Possession":  "Possession, %",
-                   "Passes":      "Passes per 90",
-                   "Pressing":    "PPDA",
-                   "Long Balls":  "Long passes per 90",
-                   "xG":          "xG per 90"},
-        "cf":     {"Possession":  "Possession, %",
-                   "Passes":      "Passes per 90",
-                   "Pressing":    "PPDA",
-                   "Long Balls":  "Long passes per 90",
-                   "xG":          "xG per 90"},
+        "cb":     {
+            "Possession":  ("Possession, %",              False),
+            "Passes":      ("Passes per 90",               False),
+            "Long Balls":  ("Long passes per 90",          False),
+            "xGA":         ("xGA per 90",                  True),   # lower = better
+            "Goals vs":    ("Goals conceded per 90",       True),   # lower = better
+        },
+        "fb":     {
+            "Possession":  ("Possession, %",              False),
+            "Passes":      ("Passes per 90",               False),
+            "Pressing":    ("PPDA",                        True),   # lower = more pressing = better
+            "Long Balls":  ("Long passes per 90",          False),
+            "xGA":         ("xGA per 90",                  True),   # lower = better
+        },
+        "cm":     {
+            "Possession":  ("Possession, %",              False),
+            "Passes":      ("Passes per 90",               False),
+            "Pressing":    ("PPDA",                        True),   # lower = better
+            "Long Balls":  ("Long passes per 90",          False),
+            "Passes F3rd": ("Passes to final third per 90",False),
+        },
+        "attack": {
+            "Possession":  ("Possession, %",              False),
+            "Passes":      ("Passes per 90",               False),
+            "Pressing":    ("PPDA",                        True),   # lower = better
+            "Long Balls":  ("Long passes per 90",          False),
+            "xG":          ("xG per 90",                   False),
+        },
+        "cf":     {
+            "Possession":  ("Possession, %",              False),
+            "Passes":      ("Passes per 90",               False),
+            "Pressing":    ("PPDA",                        True),   # lower = better
+            "Long Balls":  ("Long passes per 90",          False),
+            "xG":          ("xG per 90",                   False),
+        },
     }
-    _RR_INVERT_COLS = {"PPDA"}
 
     def _rr_compute_team_pcts(team_df, team_name, col_map):
+        """col_map values are (csv_column_name, invert_bool) tuples."""
         labels, pcts = [], []
-        for lab, col in col_map.items():
+        for lab, (col, invert) in col_map.items():
             labels.append(lab)
             if col not in team_df.columns:
                 pcts.append(50); continue
@@ -3814,8 +3846,8 @@ else:
             v      = float(vals.loc[rows.index[0]])
             ranked = _rankdata_rr(vals.values) / len(vals)
             pct    = float(ranked[vals.index.get_loc(rows.index[0])]) * 100
-            if col in _RR_INVERT_COLS:
-                pct = 100 - pct
+            if invert:
+                pct = 100 - pct   # lower raw = higher percentile
             pcts.append(int(round(pct)))
         return labels, pcts
 
@@ -3869,8 +3901,12 @@ else:
     # SECTION 1 — Role Requirements (player data only)
     # ═══════════════════════════════════════════════════════════════════════════════
     st.markdown("---")
-    st.header("📊 Role Requirements")
-    st.caption(f"Team average vs league · {sel_team} · {_arch_team_league}")
+    st.markdown('<h2 style="color:#ffffff;">📊 Role Requirements</h2>', unsafe_allow_html=True)
+    st.markdown(
+        f'<p style="color:#9ca3af;font-size:13px;">Team average vs league &nbsp;·&nbsp; '
+        f'{sel_team} &nbsp;·&nbsp; {_arch_team_league}</p>',
+        unsafe_allow_html=True,
+    )
 
     _RR_TAB_KEYS   = ["cb", "fb", "cm", "attack", "cf"]
     _RR_TAB_LABELS = ["Center Backs", "Fullbacks", "Central Midfielders", "Attackers", "Strikers"]
@@ -3885,15 +3921,20 @@ else:
 
             _rr1_c1, _rr1_c2 = st.columns([1, 2])
             with _rr1_c1:
-                _rr1_min_mins = st.slider("Min minutes", 0, 5000, 750, 50, key=f"rr1_mins_{_rr1_rk}")
-                _rr1_mode     = st.radio("Compare", ["Team average", "Specific player"],
-                                          horizontal=True, key=f"rr1_mode_{_rr1_rk}")
+                st.markdown('<p style="color:#ffffff;font-weight:700;font-size:13px;">MIN MINUTES</p>', unsafe_allow_html=True)
+                _rr1_min_mins = st.slider("Min minutes", 0, 5000, 750, 50,
+                                           key=f"rr1_mins_{_rr1_rk}", label_visibility="collapsed")
+                st.markdown(f'<p style="color:#ffffff;font-size:13px;margin-bottom:4px;">Value: <b>{_rr1_min_mins}</b></p>', unsafe_allow_html=True)
+                st.markdown('<p style="color:#ffffff;font-weight:700;font-size:13px;margin-top:8px;">COMPARE</p>', unsafe_allow_html=True)
+                _rr1_mode = st.radio("Compare", ["Team average", "Specific player"],
+                                      horizontal=True, key=f"rr1_mode_{_rr1_rk}",
+                                      label_visibility="collapsed")
 
             if _rr1_mode == "Team average":
                 _rr1_pcts, _rr1_err = _rr_compute_role_pcts_team(
                     df_players, _arch_team_league, sel_team, _rr1_role_cfg, _rr1_min_mins
                 )
-                _rr1_subtitle = f"{sel_team} AVG vs {_arch_team_league} {_rr1_role_cfg['title']}"
+                _rr1_subtitle = f"{sel_team} AVG vs {_arch_team_league} — {_rr1_role_cfg['title']}"
             else:
                 _rr1_elig = df_players[
                     (df_players["League"].astype(str) == str(_arch_team_league)) &
@@ -3905,24 +3946,24 @@ else:
                 if _rr1_elig.empty:
                     st.info(f"No eligible {_rr1_role_cfg['title']} on {sel_team} with ≥{_rr1_min_mins} mins.")
                     continue
+                st.markdown('<p style="color:#ffffff;font-weight:700;font-size:13px;margin-top:8px;">PLAYER</p>', unsafe_allow_html=True)
                 _rr1_player_sel = st.selectbox(
                     "Player", sorted(_rr1_elig["Player"].astype(str).unique()),
-                    key=f"rr1_player_{_rr1_rk}"
+                    key=f"rr1_player_{_rr1_rk}", label_visibility="collapsed"
                 )
                 _rr1_pcts, _rr1_err = _rr_compute_role_pcts_player(
                     df_players, _arch_team_league, sel_team, _rr1_player_sel,
                     _rr1_role_cfg, _rr1_min_mins
                 )
-                _rr1_subtitle = f"{_rr1_player_sel} vs {_arch_team_league} {_rr1_role_cfg['title']}"
+                _rr1_subtitle = f"{_rr1_player_sel} vs {_arch_team_league} — {_rr1_role_cfg['title']}"
 
             if _rr1_err:
                 st.info(_rr1_err)
                 continue
 
             _rr1_fig = _rr_polar_bars_fig(_rr1_role_cfg["agg_cols"], _rr1_pcts)
-            # Subtitle shown as st.caption below chart instead of on the figure
             with _rr1_c2:
-                st.caption(_rr1_subtitle)
+                st.markdown(f'<p style="color:#9ca3af;font-size:12px;margin-bottom:0;">{_rr1_subtitle}</p>', unsafe_allow_html=True)
                 st.pyplot(_rr1_fig, use_container_width=True)
             _rr1_buf = _BytesIO_rr()
             _rr1_fig.savefig(_rr1_buf, format="png", dpi=300, bbox_inches="tight",
@@ -3938,59 +3979,53 @@ else:
             plt.close(_rr1_fig)
 
     # ═══════════════════════════════════════════════════════════════════════════════
-    # SECTION 2 — Role Requirements + Team Style
-    # Uses the already-loaded df_team_raw — no separate upload needed
+    # SECTION 2 — Role Requirements + Team Style (uses already-loaded df_team_raw)
     # ═══════════════════════════════════════════════════════════════════════════════
     st.markdown("---")
-    st.header("📊 Role Requirements & Team Style")
-    st.caption(
-        f"Left half = team style vs league · Right half = role percentiles · {sel_team}"
+    st.markdown('<h2 style="color:#ffffff;">📊 Role Requirements & Team Style</h2>', unsafe_allow_html=True)
+    st.markdown(
+        f'<p style="color:#9ca3af;font-size:13px;">'
+        f'Left = team style vs league &nbsp;·&nbsp; Right = role percentiles &nbsp;·&nbsp; {sel_team}'
+        f'</p>',
+        unsafe_allow_html=True,
     )
 
-    # ── Map the already-loaded team CSV columns to what the split radar expects ────
-    # df_team_raw uses canonical COL_MAP names; we need to build a compatible df
-    # with "Team" column plus the raw Wyscout-style column names the radar expects.
+    # Remap df_team_raw canonical columns → Wyscout-style names expected by _rr_compute_team_pcts
     _RR2_COL_REMAP = {
-        # canonical name in df_team_raw  →  expected name in _rr_compute_team_pcts
-        "Possession %":                   "Possession, %",
-        "Passes p90":                     "Passes per 90",
-        "Long Passes p90":                "Long passes per 90",
-        "xG Against p90":                 "xGA per 90",
-        "Goals Against p90":              "Goals conceded per 90",
-        "PPDA":                           "PPDA",
-        "xG p90":                         "xG per 90",
-        "Passes to Final Third p90":      "Passes to final third per 90",
+        "Possession %":               "Possession, %",
+        "Passes p90":                 "Passes per 90",
+        "Long Passes p90":            "Long passes per 90",
+        "xG Against p90":             "xGA per 90",
+        "Goals Against p90":          "Goals conceded per 90",
+        "PPDA":                       "PPDA",
+        "xG p90":                     "xG per 90",
+        "Passes to Final Third p90":  "Passes to final third per 90",
     }
+    _rr2_rename = {k: v for k, v in _RR2_COL_REMAP.items() if k in df_team_raw.columns}
+    _rr2_keep   = ["Team"] + list(_rr2_rename.keys())
+    _rr2_team_df = df_team_raw[[c for c in _rr2_keep if c in df_team_raw.columns]].rename(columns=_rr2_rename).copy()
 
-    # Build a view of df_team_raw with both Team column and remapped columns
-    _rr2_avail_cols = {"Team": "Team"}
-    _rr2_avail_cols.update({
-        src: dst for src, dst in _RR2_COL_REMAP.items()
-        if src in df_team_raw.columns
-    })
-    _rr2_team_df = df_team_raw[list(_rr2_avail_cols.keys())].rename(columns=_rr2_avail_cols).copy()
-
-    # Match sel_team in the loaded data
     _rr2_csv_teams = _rr2_team_df["Team"].astype(str).tolist() if "Team" in _rr2_team_df.columns else []
 
     if sel_team in _rr2_csv_teams:
         _rr2_matched = sel_team
     else:
-        _rr2_matched = next(
-            (t for t in _rr2_csv_teams if sel_team.lower()[:5] in t.lower()), None
-        )
+        _rr2_matched = next((t for t in _rr2_csv_teams if sel_team.lower()[:5] in t.lower()), None)
         if _rr2_matched:
-            st.caption(f"ℹ️ Matched **{sel_team}** → **{_rr2_matched}** in team data.")
+            st.markdown(f'<p style="color:#9ca3af;font-size:12px;">ℹ️ Matched <b>{sel_team}</b> → <b>{_rr2_matched}</b></p>',
+                        unsafe_allow_html=True)
 
     if not _rr2_matched:
+        st.markdown('<p style="color:#ffffff;font-weight:700;">SELECT MATCHING TEAM</p>', unsafe_allow_html=True)
         _rr2_pick = st.selectbox(
-            f"'{sel_team}' not found in team data — select the matching team:",
-            ["(none)"] + sorted(_rr2_csv_teams), key="rr2_team_match"
+            f"'{sel_team}' not found — select matching team:",
+            ["(none)"] + sorted(_rr2_csv_teams), key="rr2_team_match",
+            label_visibility="collapsed",
         )
         _rr2_matched = None if _rr2_pick == "(none)" else _rr2_pick
 
     if not _rr2_matched:
-        st.info("Could not match team in loaded data — select manually above.")
+        st.info("Could not match team — select manually above.")
     else:
         _rr2_tabs = st.tabs(_RR_TAB_LABELS)
         for _rr2_tab, _rr2_rk in zip(_rr2_tabs, _RR_TAB_KEYS):
@@ -4002,9 +4037,14 @@ else:
 
                 _rr2_c1, _rr2_c2 = st.columns([1, 2])
                 with _rr2_c1:
-                    _rr2_min_mins = st.slider("Min minutes", 0, 5000, 750, 50, key=f"rr2_mins_{_rr2_rk}")
-                    _rr2_mode     = st.radio("Compare", ["Team average", "Specific player"],
-                                              horizontal=True, key=f"rr2_mode_{_rr2_rk}")
+                    st.markdown('<p style="color:#ffffff;font-weight:700;font-size:13px;">MIN MINUTES</p>', unsafe_allow_html=True)
+                    _rr2_min_mins = st.slider("Min minutes", 0, 5000, 750, 50,
+                                               key=f"rr2_mins_{_rr2_rk}", label_visibility="collapsed")
+                    st.markdown(f'<p style="color:#ffffff;font-size:13px;margin-bottom:4px;">Value: <b>{_rr2_min_mins}</b></p>', unsafe_allow_html=True)
+                    st.markdown('<p style="color:#ffffff;font-weight:700;font-size:13px;margin-top:8px;">COMPARE</p>', unsafe_allow_html=True)
+                    _rr2_mode = st.radio("Compare", ["Team average", "Specific player"],
+                                          horizontal=True, key=f"rr2_mode_{_rr2_rk}",
+                                          label_visibility="collapsed")
 
                 if _rr2_mode == "Team average":
                     _rr2_role_pcts, _rr2_err = _rr_compute_role_pcts_team(
@@ -4022,9 +4062,10 @@ else:
                     if _rr2_elig.empty:
                         st.info(f"No eligible {_rr2_role_cfg['title']} on {sel_team} with ≥{_rr2_min_mins} mins.")
                         continue
+                    st.markdown('<p style="color:#ffffff;font-weight:700;font-size:13px;margin-top:8px;">PLAYER</p>', unsafe_allow_html=True)
                     _rr2_player_sel = st.selectbox(
                         "Player", sorted(_rr2_elig["Player"].astype(str).unique()),
-                        key=f"rr2_player_{_rr2_rk}"
+                        key=f"rr2_player_{_rr2_rk}", label_visibility="collapsed"
                     )
                     _rr2_role_pcts, _rr2_err = _rr_compute_role_pcts_player(
                         df_players, _arch_team_league, sel_team, _rr2_player_sel,
@@ -4046,7 +4087,8 @@ else:
                     _rr2_role_cfg["agg_cols"], _rr2_role_pcts,
                 )
                 with _rr2_c2:
-                    st.caption(_rr2_subtitle)
+                    st.markdown(f'<p style="color:#9ca3af;font-size:12px;margin-bottom:0;">{_rr2_subtitle}</p>',
+                                unsafe_allow_html=True)
                     st.pyplot(_rr2_fig, use_container_width=True)
                 _rr2_buf = _BytesIO_rr()
                 _rr2_fig.savefig(_rr2_buf, format="png", dpi=300, bbox_inches="tight",

@@ -3358,8 +3358,8 @@ else:
     _arch_has_box = _cfg["box_col"] is not None
     
     # ── Settings expander ────────────────────────────────────────────────────────
-    # These must be outside the expander — df and player_row are only in scope here
-    _arch_leagues_avail = sorted(df["League"].dropna().unique().tolist())
+    # These must be outside the expander — df_players and player_row are only in scope here
+    _arch_leagues_avail = sorted(df_players["League"].dropna().unique().tolist())
     _arch_player_league = player_row.iloc[0]["League"] if not player_row.empty else None
     
     with st.expander("Scatter settings", expanded=False):
@@ -3404,7 +3404,7 @@ else:
         _arch_render_exact = st.checkbox("Render exact pixels (PNG)", value=True, key="arch_exact")
     
     # ── Build pool ───────────────────────────────────────────────────────────────
-    _arch_pool = df[df["League"].isin(_arch_leagues)].copy()
+    _arch_pool = df_players[df_players["League"].isin(_arch_leagues)].copy()
     _arch_pool["_primary_pos"] = _arch_pool["Position"].astype(str).str.split(",").str[0].str.strip()
     _arch_pool = _arch_pool[_arch_pool["_primary_pos"].isin(_cfg["pos_tokens"])].copy()
     

@@ -3180,449 +3180,449 @@ else:
 # END TEAM PLAYER RANKINGS SECTION
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# TEAM ARCHETYPE MAP — position-filtered scatter, highlights team players
-# Paste immediately after Team Player Rankings section in team_squad_app.py
-# Positions: ATT · CB · CM · ST · FB · GK
-# ═══════════════════════════════════════════════════════════════════════════════
-
-from scipy.stats import rankdata as _rankdata_arch
-from matplotlib.ticker import MultipleLocator as _MLoc
-from matplotlib.lines import Line2D as _L2D
-from matplotlib import patheffects as _pe_arch
-from io import BytesIO as _BytesIO_arch
-import uuid as _uuid_arch
-
-st.markdown("---")
-st.header("🧭 Team Archetype Map")
-
-# ── Position selector ────────────────────────────────────────────────────────
-_ARCH_POS_OPTIONS = ["GK", "CB", "FB", "CM / DM", "ATT (W/AM)", "ST (CF)"]
-_arch_pos = st.selectbox(
-    "Select position group",
-    _ARCH_POS_OPTIONS,
-    index=0,
-    key="arch_pos_sel",
-)
-
-# ── Config per position ──────────────────────────────────────────────────────
-_ARCH_CFG = {
-    "ATT (W/AM)": dict(
-        pos_tokens=["LWF", "RWF", "RW", "LW", "RAMF", "LAMF", "AMF"],
-        x_col="Threat_score", y_col="poss_score",
-        x_label="Threat Score", y_label="Possession Score",
-        metric_groups={
-            "Threat_score": {"xG per 90": 0.3, "Non-penalty goals per 90": 0.4, "xA per 90": 0.3},
-            "poss_score":   {"Smart passes per 90": 0.1, "Dribbles per 90": 0.3,
-                             "Deep completions per 90": 0.1, "Progressive runs per 90": 0.2,
-                             "Passes to penalty area per 90": 0.3},
-            "flag_score":   {"Dribbles per 90": 0.4, "Successful dribbles, %": 0.1,
-                             "Progressive runs per 90": 0.3, "Accelerations per 90": 0.2},
-        },
-        flag_col="flag_score", flag_thr=70, flag_label="Ball Carrier",
-        box_col=None, box_thr=None, box_label=None,
-        quadrants={"tl": "FACILITATOR", "tr": "MULTI-THREAT", "bl": "LIMITED", "br": "FINAL ACTION"},
-        classify=lambda r: (
-            "Multi-Threat" if r["Threat_score"] >= 50 and r["poss_score"] >= 50 else
-            "Final Action" if r["Threat_score"] >= 50 else
-            "Facilitator"  if r["poss_score"] >= 50 else "Limited"
-        ),
-        arch_colors={"Final Action": "#76B7B2", "Facilitator": "#F28E2B",
-                     "Multi-Threat": "#4E79A7", "Limited": "#E15759"},
-    ),
-    "CB": dict(
-        pos_tokens=["LCB", "RCB", "CB"],
-        x_col="poss_score", y_col="def_score",
-        x_label="Possession Score", y_label="Defensive Score",
-        metric_groups={
-            "def_score":  {"Defensive duels per 90": 0.1, "Defensive duels won, %": 0.3,
-                           "PAdj Interceptions": 0.2, "Aerial duels won, %": 0.3,
-                           "Shots blocked per 90": 0.1},
-            "poss_score": {"Passes per 90": 0.1, "Forward passes per 90": 0.1,
-                           "Progressive passes per 90": 0.25, "Dribbles per 90": 0.1,
-                           "Progressive runs per 90": 0.2, "Accurate passes, %": 0.15,
-                           "Accurate long passes, %": 0.1},
-            "flag_score": {"Dribbles per 90": 0.4, "Successful dribbles, %": 0.1,
-                           "Progressive runs per 90": 0.3, "Accelerations per 90": 0.2},
-        },
-        flag_col="flag_score", flag_thr=70, flag_label="Ball Carrier",
-        box_col=None, box_thr=None, box_label=None,
-        quadrants={"tl": "BOX DEFENDER", "tr": "COMPLETE", "bl": "LIMITED", "br": "BALL PLAYER"},
-        classify=lambda r: (
-            "Complete"     if r["def_score"] >= 50 and r["poss_score"] >= 50 else
-            "Box-Defender" if r["def_score"] >= 50 else
-            "Ball Player"  if r["poss_score"] >= 50 else "Limited"
-        ),
-        arch_colors={"Ball Player": "#76B7B2", "Box-Defender": "#F28E2B",
-                     "Complete": "#4E79A7", "Limited": "#E15759"},
-    ),
-    "CM / DM": dict(
-        pos_tokens=["LCMF", "RCMF", "DMF", "RDMF", "LDMF"],
-        x_col="poss_score", y_col="def_score",
-        x_label="Possession Score", y_label="Defensive Score",
-        metric_groups={
-            "def_score":  {"Defensive duels per 90": 0.4, "Defensive duels won, %": 0.3,
-                           "PAdj Interceptions": 0.2, "Shots blocked per 90": 0.1},
-            "poss_score": {"Passes per 90": 0.2, "Accurate passes, %": 0.1,
-                           "Forward passes per 90": 0.2, "Progressive passes per 90": 0.2,
-                           "xA per 90": 0.1, "Key passes per 90": 0.1,
-                           "Passes to penalty area per 90": 0.1},
-            "flag_score": {"Dribbles per 90": 0.4, "Successful dribbles, %": 0.1,
-                           "Progressive runs per 90": 0.3, "Accelerations per 90": 0.2},
-            "box_score":  {"xG per 90": 0.3, "Non-penalty goals per 90": 0.4,
-                           "Touches in box per 90": 0.3},
-        },
-        flag_col="flag_score", flag_thr=70, flag_label="Ball Carrier",
-        box_col="box_score", box_thr=80, box_label="Pen-Box Threat",
-        quadrants={"tl": "DESTROYER", "tr": "ALL ACTION", "bl": "LIMITED", "br": "PLAYMAKER"},
-        classify=lambda r: (
-            "All Action" if r["def_score"] >= 50 and r["poss_score"] >= 50 else
-            "Destroyer"  if r["def_score"] >= 50 else
-            "Playmaker"  if r["poss_score"] >= 50 else "Limited"
-        ),
-        arch_colors={"Playmaker": "#76B7B2", "Destroyer": "#F28E2B",
-                     "All Action": "#4E79A7", "Limited": "#E15759"},
-    ),
-    "ST (CF)": dict(
-        pos_tokens=["CF"],
-        x_col="Threat_score", y_col="poss_score",
-        x_label="Threat Score", y_label="Possession Score",
-        metric_groups={
-            "Threat_score": {"xG per 90": 0.4, "Non-penalty goals per 90": 0.6},
-            "poss_score":   {"xA per 90": 0.2, "Dribbles per 90": 0.3,
-                             "Aerial duels won, %": 0.1, "Progressive runs per 90": 0.2,
-                             "Accurate passes, %": 0.1, "Passes to penalty area per 90": 0.1},
-            "flag_score":   {"Dribbles per 90": 0.5, "Successful dribbles, %": 0.05,
-                             "Progressive runs per 90": 0.45},
-        },
-        flag_col="flag_score", flag_thr=70, flag_label="Ball Carrier",
-        box_col=None, box_thr=None, box_label=None,
-        quadrants={"tl": "LINK-UP", "tr": "COMPLETE", "bl": "LIMITED", "br": "POACHER"},
-        classify=lambda r: (
-            "Complete" if r["Threat_score"] >= 50 and r["poss_score"] >= 50 else
-            "Poacher"  if r["Threat_score"] >= 50 else
-            "Link-Up"  if r["poss_score"] >= 50 else "Limited"
-        ),
-        arch_colors={"Poacher": "#76B7B2", "Link-Up": "#F28E2B",
-                     "Complete": "#4E79A7", "Limited": "#E15759"},
-    ),
-    "FB": dict(
-        pos_tokens=["LB", "LWB", "RB", "RWB"],
-        x_col="poss_score", y_col="def_score",
-        x_label="Possession Score", y_label="Defensive Score",
-        metric_groups={
-            "def_score":  {"Defensive duels per 90": 0.4, "Defensive duels won, %": 0.3,
-                           "PAdj Interceptions": 0.2, "Shots blocked per 90": 0.1},
-            "poss_score": {"Passes per 90": 0.1, "Crosses per 90": 0.1,
-                           "Forward passes per 90": 0.1, "Progressive passes per 90": 0.2,
-                           "xA per 90": 0.1, "Dribbles per 90": 0.1,
-                           "Progressive runs per 90": 0.2, "Passes to penalty area per 90": 0.1},
-            "flag_score": {"Dribbles per 90": 0.4, "Successful dribbles, %": 0.1,
-                           "Progressive runs per 90": 0.3, "Accelerations per 90": 0.2},
-        },
-        flag_col="flag_score", flag_thr=70, flag_label="Ball Carrier",
-        box_col=None, box_thr=None, box_label=None,
-        quadrants={"tl": "LOCKDOWN", "tr": "TWO-WAY", "bl": "LIMITED", "br": "BUILD-UP / ATTACKING"},
-        classify=lambda r: (
-            "Two-Way"  if r["def_score"] >= 50 and r["poss_score"] >= 50 else
-            "Lockdown" if r["def_score"] >= 50 else
-            "Build-Up" if r["poss_score"] >= 50 else "Limited"
-        ),
-        arch_colors={"Build-Up": "#76B7B2", "Lockdown": "#F28E2B",
-                     "Two-Way": "#4E79A7", "Limited": "#E15759"},
-    ),
-    "GK": dict(
-        pos_tokens=["GK"],
-        x_col="gk_score", y_col="poss_score",
-        x_label="Goalkeeping Score", y_label="Possession Score",
-        metric_groups={
-            "gk_score":   {"Prevented goals per 90": 0.8, "Save rate, %": 0.2},
-            "poss_score": {"Passes per 90": 0.25, "Accurate passes, %": 0.5,
-                           "Accurate long passes, %": 0.25},
-            "flag_score": {"Exits per 90": 1.0},
-        },
-        flag_col="flag_score", flag_thr=70, flag_label="Sweeper GK",
-        box_col=None, box_thr=None, box_label=None,
-        quadrants={"tl": "BALL PLAYER", "tr": "COMPLETE", "bl": "LIMITED", "br": "SHOT STOPPER"},
-        classify=lambda r: (
-            "Complete"     if r["gk_score"] >= 50 and r["poss_score"] >= 50 else
-            "Shot Stopper" if r["gk_score"] >= 50 else
-            "Ball Player"  if r["poss_score"] >= 50 else "Limited"
-        ),
-        arch_colors={"Shot Stopper": "#76B7B2", "Ball Player": "#F28E2B",
-                     "Complete": "#4E79A7", "Limited": "#E15759"},
-    ),
-}
-
-_cfg = _ARCH_CFG[_arch_pos]
-_arch_has_box = _cfg["box_col"] is not None
-
-# ── Settings expander ────────────────────────────────────────────────────────
-# These must be outside the expander — df and player_row are only in scope here
-_arch_leagues_avail = sorted(df["League"].dropna().unique().tolist())
-_arch_player_league = player_row.iloc[0]["League"] if not player_row.empty else None
-
-with st.expander("Scatter settings", expanded=False):
-    _arch_preset = st.selectbox(
-        "League preset",
-        ["Player's league", "Top 5 Europe", "Top 20 Europe", "EFL (England 2–4)", "Custom"],
-        index=0, key="arch_preset",
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # TEAM ARCHETYPE MAP — position-filtered scatter, highlights team players
+    # Paste immediately after Team Player Rankings section in team_squad_app.py
+    # Positions: ATT · CB · CM · ST · FB · GK
+    # ═══════════════════════════════════════════════════════════════════════════════
+    
+    from scipy.stats import rankdata as _rankdata_arch
+    from matplotlib.ticker import MultipleLocator as _MLoc
+    from matplotlib.lines import Line2D as _L2D
+    from matplotlib import patheffects as _pe_arch
+    from io import BytesIO as _BytesIO_arch
+    import uuid as _uuid_arch
+    
+    st.markdown("---")
+    st.header("🧭 Team Archetype Map")
+    
+    # ── Position selector ────────────────────────────────────────────────────────
+    _ARCH_POS_OPTIONS = ["GK", "CB", "FB", "CM / DM", "ATT (W/AM)", "ST (CF)"]
+    _arch_pos = st.selectbox(
+        "Select position group",
+        _ARCH_POS_OPTIONS,
+        index=0,
+        key="arch_pos_sel",
     )
-    _arch_preset_map = {
-        "Player's league":   {_arch_player_league} if _arch_player_league else set(),
-        "Top 5 Europe":      set(PRESET_LEAGUES.get("Top 5 Europe", [])),
-        "Top 20 Europe":     set(PRESET_LEAGUES.get("Top 20 Europe", [])),
-        "EFL (England 2–4)": set(PRESET_LEAGUES.get("EFL (England 2–4)", [])),
-        "Custom":            set(),
+    
+    # ── Config per position ──────────────────────────────────────────────────────
+    _ARCH_CFG = {
+        "ATT (W/AM)": dict(
+            pos_tokens=["LWF", "RWF", "RW", "LW", "RAMF", "LAMF", "AMF"],
+            x_col="Threat_score", y_col="poss_score",
+            x_label="Threat Score", y_label="Possession Score",
+            metric_groups={
+                "Threat_score": {"xG per 90": 0.3, "Non-penalty goals per 90": 0.4, "xA per 90": 0.3},
+                "poss_score":   {"Smart passes per 90": 0.1, "Dribbles per 90": 0.3,
+                                 "Deep completions per 90": 0.1, "Progressive runs per 90": 0.2,
+                                 "Passes to penalty area per 90": 0.3},
+                "flag_score":   {"Dribbles per 90": 0.4, "Successful dribbles, %": 0.1,
+                                 "Progressive runs per 90": 0.3, "Accelerations per 90": 0.2},
+            },
+            flag_col="flag_score", flag_thr=70, flag_label="Ball Carrier",
+            box_col=None, box_thr=None, box_label=None,
+            quadrants={"tl": "FACILITATOR", "tr": "MULTI-THREAT", "bl": "LIMITED", "br": "FINAL ACTION"},
+            classify=lambda r: (
+                "Multi-Threat" if r["Threat_score"] >= 50 and r["poss_score"] >= 50 else
+                "Final Action" if r["Threat_score"] >= 50 else
+                "Facilitator"  if r["poss_score"] >= 50 else "Limited"
+            ),
+            arch_colors={"Final Action": "#76B7B2", "Facilitator": "#F28E2B",
+                         "Multi-Threat": "#4E79A7", "Limited": "#E15759"},
+        ),
+        "CB": dict(
+            pos_tokens=["LCB", "RCB", "CB"],
+            x_col="poss_score", y_col="def_score",
+            x_label="Possession Score", y_label="Defensive Score",
+            metric_groups={
+                "def_score":  {"Defensive duels per 90": 0.1, "Defensive duels won, %": 0.3,
+                               "PAdj Interceptions": 0.2, "Aerial duels won, %": 0.3,
+                               "Shots blocked per 90": 0.1},
+                "poss_score": {"Passes per 90": 0.1, "Forward passes per 90": 0.1,
+                               "Progressive passes per 90": 0.25, "Dribbles per 90": 0.1,
+                               "Progressive runs per 90": 0.2, "Accurate passes, %": 0.15,
+                               "Accurate long passes, %": 0.1},
+                "flag_score": {"Dribbles per 90": 0.4, "Successful dribbles, %": 0.1,
+                               "Progressive runs per 90": 0.3, "Accelerations per 90": 0.2},
+            },
+            flag_col="flag_score", flag_thr=70, flag_label="Ball Carrier",
+            box_col=None, box_thr=None, box_label=None,
+            quadrants={"tl": "BOX DEFENDER", "tr": "COMPLETE", "bl": "LIMITED", "br": "BALL PLAYER"},
+            classify=lambda r: (
+                "Complete"     if r["def_score"] >= 50 and r["poss_score"] >= 50 else
+                "Box-Defender" if r["def_score"] >= 50 else
+                "Ball Player"  if r["poss_score"] >= 50 else "Limited"
+            ),
+            arch_colors={"Ball Player": "#76B7B2", "Box-Defender": "#F28E2B",
+                         "Complete": "#4E79A7", "Limited": "#E15759"},
+        ),
+        "CM / DM": dict(
+            pos_tokens=["LCMF", "RCMF", "DMF", "RDMF", "LDMF"],
+            x_col="poss_score", y_col="def_score",
+            x_label="Possession Score", y_label="Defensive Score",
+            metric_groups={
+                "def_score":  {"Defensive duels per 90": 0.4, "Defensive duels won, %": 0.3,
+                               "PAdj Interceptions": 0.2, "Shots blocked per 90": 0.1},
+                "poss_score": {"Passes per 90": 0.2, "Accurate passes, %": 0.1,
+                               "Forward passes per 90": 0.2, "Progressive passes per 90": 0.2,
+                               "xA per 90": 0.1, "Key passes per 90": 0.1,
+                               "Passes to penalty area per 90": 0.1},
+                "flag_score": {"Dribbles per 90": 0.4, "Successful dribbles, %": 0.1,
+                               "Progressive runs per 90": 0.3, "Accelerations per 90": 0.2},
+                "box_score":  {"xG per 90": 0.3, "Non-penalty goals per 90": 0.4,
+                               "Touches in box per 90": 0.3},
+            },
+            flag_col="flag_score", flag_thr=70, flag_label="Ball Carrier",
+            box_col="box_score", box_thr=80, box_label="Pen-Box Threat",
+            quadrants={"tl": "DESTROYER", "tr": "ALL ACTION", "bl": "LIMITED", "br": "PLAYMAKER"},
+            classify=lambda r: (
+                "All Action" if r["def_score"] >= 50 and r["poss_score"] >= 50 else
+                "Destroyer"  if r["def_score"] >= 50 else
+                "Playmaker"  if r["poss_score"] >= 50 else "Limited"
+            ),
+            arch_colors={"Playmaker": "#76B7B2", "Destroyer": "#F28E2B",
+                         "All Action": "#4E79A7", "Limited": "#E15759"},
+        ),
+        "ST (CF)": dict(
+            pos_tokens=["CF"],
+            x_col="Threat_score", y_col="poss_score",
+            x_label="Threat Score", y_label="Possession Score",
+            metric_groups={
+                "Threat_score": {"xG per 90": 0.4, "Non-penalty goals per 90": 0.6},
+                "poss_score":   {"xA per 90": 0.2, "Dribbles per 90": 0.3,
+                                 "Aerial duels won, %": 0.1, "Progressive runs per 90": 0.2,
+                                 "Accurate passes, %": 0.1, "Passes to penalty area per 90": 0.1},
+                "flag_score":   {"Dribbles per 90": 0.5, "Successful dribbles, %": 0.05,
+                                 "Progressive runs per 90": 0.45},
+            },
+            flag_col="flag_score", flag_thr=70, flag_label="Ball Carrier",
+            box_col=None, box_thr=None, box_label=None,
+            quadrants={"tl": "LINK-UP", "tr": "COMPLETE", "bl": "LIMITED", "br": "POACHER"},
+            classify=lambda r: (
+                "Complete" if r["Threat_score"] >= 50 and r["poss_score"] >= 50 else
+                "Poacher"  if r["Threat_score"] >= 50 else
+                "Link-Up"  if r["poss_score"] >= 50 else "Limited"
+            ),
+            arch_colors={"Poacher": "#76B7B2", "Link-Up": "#F28E2B",
+                         "Complete": "#4E79A7", "Limited": "#E15759"},
+        ),
+        "FB": dict(
+            pos_tokens=["LB", "LWB", "RB", "RWB"],
+            x_col="poss_score", y_col="def_score",
+            x_label="Possession Score", y_label="Defensive Score",
+            metric_groups={
+                "def_score":  {"Defensive duels per 90": 0.4, "Defensive duels won, %": 0.3,
+                               "PAdj Interceptions": 0.2, "Shots blocked per 90": 0.1},
+                "poss_score": {"Passes per 90": 0.1, "Crosses per 90": 0.1,
+                               "Forward passes per 90": 0.1, "Progressive passes per 90": 0.2,
+                               "xA per 90": 0.1, "Dribbles per 90": 0.1,
+                               "Progressive runs per 90": 0.2, "Passes to penalty area per 90": 0.1},
+                "flag_score": {"Dribbles per 90": 0.4, "Successful dribbles, %": 0.1,
+                               "Progressive runs per 90": 0.3, "Accelerations per 90": 0.2},
+            },
+            flag_col="flag_score", flag_thr=70, flag_label="Ball Carrier",
+            box_col=None, box_thr=None, box_label=None,
+            quadrants={"tl": "LOCKDOWN", "tr": "TWO-WAY", "bl": "LIMITED", "br": "BUILD-UP / ATTACKING"},
+            classify=lambda r: (
+                "Two-Way"  if r["def_score"] >= 50 and r["poss_score"] >= 50 else
+                "Lockdown" if r["def_score"] >= 50 else
+                "Build-Up" if r["poss_score"] >= 50 else "Limited"
+            ),
+            arch_colors={"Build-Up": "#76B7B2", "Lockdown": "#F28E2B",
+                         "Two-Way": "#4E79A7", "Limited": "#E15759"},
+        ),
+        "GK": dict(
+            pos_tokens=["GK"],
+            x_col="gk_score", y_col="poss_score",
+            x_label="Goalkeeping Score", y_label="Possession Score",
+            metric_groups={
+                "gk_score":   {"Prevented goals per 90": 0.8, "Save rate, %": 0.2},
+                "poss_score": {"Passes per 90": 0.25, "Accurate passes, %": 0.5,
+                               "Accurate long passes, %": 0.25},
+                "flag_score": {"Exits per 90": 1.0},
+            },
+            flag_col="flag_score", flag_thr=70, flag_label="Sweeper GK",
+            box_col=None, box_thr=None, box_label=None,
+            quadrants={"tl": "BALL PLAYER", "tr": "COMPLETE", "bl": "LIMITED", "br": "SHOT STOPPER"},
+            classify=lambda r: (
+                "Complete"     if r["gk_score"] >= 50 and r["poss_score"] >= 50 else
+                "Shot Stopper" if r["gk_score"] >= 50 else
+                "Ball Player"  if r["poss_score"] >= 50 else "Limited"
+            ),
+            arch_colors={"Shot Stopper": "#76B7B2", "Ball Player": "#F28E2B",
+                         "Complete": "#4E79A7", "Limited": "#E15759"},
+        ),
     }
-    _arch_add     = st.multiselect("Add leagues", _arch_leagues_avail, default=[], key="arch_add")
-    _arch_leagues = sorted(_arch_preset_map[_arch_preset] | set(_arch_add))
-    if not _arch_leagues and _arch_player_league:
-        _arch_leagues = [_arch_player_league]
-
-    _arch_min_mins, _arch_max_mins = st.slider("Minutes", 0, 5000, (300, 5000), key="arch_mins")
-    _arch_min_age,  _arch_max_age  = st.slider("Age", 14, 45, (16, 40), key="arch_age")
-    _arch_min_ls,   _arch_max_ls   = st.slider("League Strength", 0, 101, (0, 101), key="arch_ls")
-
-    _arch_show_labels = st.toggle("Show labels", value=True, key="arch_labels")
-    _arch_label_mode  = st.selectbox(
-        "Label mode",
-        ["Team players only", "All players", "U23 only", "U21 only", "U18 only"],
-        index=0, key="arch_label_mode",
-    )
-    _arch_label_size = st.slider("Label size", 8, 20, 11, 1, key="arch_lblsize")
-    _arch_pt_size    = st.slider("Point size", 24, 300, 180, 2, key="arch_pts")
-    _arch_pt_alpha   = st.slider("Point opacity (others)", 0.05, 1.0, 0.25, 0.05, key="arch_alpha")
-
-    _arch_canvas = st.selectbox(
-        "Canvas size",
-        ["1280×720", "1600×900", "1920×820", "1920×1080"],
-        index=1, key="arch_canvas",
-    )
-    _arch_w, _arch_h = map(int, _arch_canvas.replace("×", "x").split("x"))
-    _arch_top_gap    = st.slider("Top gap (px)", 0, 240, 80, 5, key="arch_gap")
-    _arch_render_exact = st.checkbox("Render exact pixels (PNG)", value=True, key="arch_exact")
-
-# ── Build pool ───────────────────────────────────────────────────────────────
-_arch_pool = df[df["League"].isin(_arch_leagues)].copy()
-_arch_pool["_primary_pos"] = _arch_pool["Position"].astype(str).str.split(",").str[0].str.strip()
-_arch_pool = _arch_pool[_arch_pool["_primary_pos"].isin(_cfg["pos_tokens"])].copy()
-
-_arch_pool["Minutes played"]  = pd.to_numeric(_arch_pool["Minutes played"], errors="coerce")
-_arch_pool["Age"]             = pd.to_numeric(_arch_pool["Age"], errors="coerce")
-_arch_pool["League Strength"] = _arch_pool["League"].map(LEAGUE_STRENGTHS).fillna(0)
-
-_arch_pool = _arch_pool[
-    _arch_pool["Minutes played"].between(_arch_min_mins, _arch_max_mins)
-    & _arch_pool["Age"].between(_arch_min_age, _arch_max_age)
-    & _arch_pool["League Strength"].between(_arch_min_ls, _arch_max_ls)
-].copy()
-
-if _arch_pool.empty:
-    st.info(f"No players found for {_arch_pos} with current filters.")
-    st.stop()
-
-# ── Identify team players ────────────────────────────────────────────────────
-_arch_team_players = set(
-    _arch_pool.loc[_arch_pool["Team"].astype(str) == str(sel_team), "Player"].astype(str)
-)
-
-# ── Weighted percentile helper ────────────────────────────────────────────────
-def _arch_wpct(df_sub, row, mgrp):
-    total = 0.0
-    for m, w in mgrp.items():
-        if m not in df_sub.columns:
-            continue
-        vals = pd.to_numeric(df_sub[m], errors="coerce").fillna(0)
-        pct  = _rankdata_arch(vals.values) / len(vals)
-        total += float(pct[df_sub.index.get_loc(row.name)]) * w
-    return total * 100.0
-
-# ── Compute scores ───────────────────────────────────────────────────────────
-for _sn, _grp in _cfg["metric_groups"].items():
-    _arch_pool[_sn] = _arch_pool.apply(
-        lambda r, g=_grp: _arch_wpct(_arch_pool, r, g), axis=1
-    )
-
-_arch_pool["Archetype"] = _arch_pool.apply(_cfg["classify"], axis=1)
-_arch_pool["_flag"]     = _arch_pool[_cfg["flag_col"]] >= _cfg["flag_thr"]
-
-if _arch_has_box:
-    _arch_pool["_box_flag"] = _arch_pool[_cfg["box_col"]] >= _cfg["box_thr"]
-
-_arch_pool["_is_team"] = _arch_pool["Player"].astype(str).isin(_arch_team_players)
-
-# ── Plot ─────────────────────────────────────────────────────────────────────
-_PAGE_BG = "#0a0f1c"
-_PLOT_BG  = "#0a0f1c"
-_GRID_C   = "#3a4050"
-_TXT_C    = "#f1f5f9"
-
-_arch_fig, _arch_ax = plt.subplots(figsize=(_arch_w / 100, _arch_h / 100), dpi=100)
-_arch_fig.patch.set_facecolor(_PAGE_BG)
-_arch_ax.set_facecolor(_PLOT_BG)
-
-_arch_ax.set_xlim(0, 100)
-_arch_ax.set_ylim(0, 100)
-_arch_ax.set_xlabel(_cfg["x_label"], fontsize=16, fontweight="semibold", color=_TXT_C, labelpad=14)
-_arch_ax.set_ylabel(_cfg["y_label"], fontsize=16, fontweight="semibold", color=_TXT_C)
-
-_arch_ax.xaxis.set_major_locator(_MLoc(10))
-_arch_ax.yaxis.set_major_locator(_MLoc(10))
-for _tk in _arch_ax.get_xticklabels() + _arch_ax.get_yticklabels():
-    _tk.set_fontweight("semibold"); _tk.set_color(_TXT_C); _tk.set_fontsize(14)
-
-_arch_ax.grid(True, color=_GRID_C, linewidth=0.6)
-for _sp in _arch_ax.spines.values():
-    _sp.set_color("#e5e7eb"); _sp.set_linewidth(1.1)
-
-_arch_ax.axvline(50, color="#FFFFFF", linestyle=(0, (4, 4)), lw=1.5)
-_arch_ax.axhline(50, color="#FFFFFF", linestyle=(0, (4, 4)), lw=1.5)
-
-_qbox = dict(boxstyle="round,pad=0.35", facecolor="#d1d5db", edgecolor="none", alpha=0.9)
-_arch_ax.text(6,  94, _cfg["quadrants"]["tl"], fontsize=16, weight="bold", bbox=_qbox)
-_arch_ax.text(94, 94, _cfg["quadrants"]["tr"], fontsize=16, weight="bold", ha="right", bbox=_qbox)
-_arch_ax.text(6,   6, _cfg["quadrants"]["bl"], fontsize=16, weight="bold", bbox=_qbox)
-_arch_ax.text(96,  6, _cfg["quadrants"]["br"], fontsize=16, weight="bold", ha="right", bbox=_qbox)
-
-_x_col      = _cfg["x_col"]
-_y_col      = _cfg["y_col"]
-_arch_cols  = _cfg["arch_colors"]
-_eff_sz     = _arch_pt_size * 1.5
-
-# Draw background players first, team players on top
-for _is_team_pass in [False, True]:
-    _sub   = _arch_pool[_arch_pool["_is_team"] == _is_team_pass]
-    if _sub.empty:
-        continue
-    _alpha = 1.0 if _is_team_pass else _arch_pt_alpha
-    _sz    = _eff_sz * (1.4 if _is_team_pass else 1.0)
-    _ew    = 1.2 if _is_team_pass else 0
-    _ec    = "#ffffff" if _is_team_pass else "none"
-    _zo    = 4 if _is_team_pass else 2
-
-    if _arch_has_box:
-        for _, _r in _sub.iterrows():
-            _mk = "D" if _r["_box_flag"] else ("s" if _r["_flag"] else "o")
-            _arch_ax.scatter(
-                _r[_x_col], _r[_y_col],
-                s=_sz, c=_arch_cols[_r["Archetype"]],
-                alpha=_alpha, marker=_mk,
-                edgecolors=_ec, linewidths=_ew, zorder=_zo,
-            )
-    else:
-        for (_al, _fl), _gdf in _sub.groupby(["Archetype", "_flag"]):
-            _arch_ax.scatter(
-                _gdf[_x_col], _gdf[_y_col],
-                s=_sz, c=_arch_cols[_al],
-                alpha=_alpha, marker="s" if _fl else "o",
-                edgecolors=_ec, linewidths=_ew, zorder=_zo,
-            )
-
-# Labels
-if _arch_show_labels:
-    if _arch_label_mode == "Team players only":
-        _ldf = _arch_pool[_arch_pool["_is_team"]]
-    elif _arch_label_mode == "All players":
-        _ldf = _arch_pool
-    elif _arch_label_mode == "U23 only":
-        _ldf = _arch_pool[_arch_pool["Age"] < 23]
-    elif _arch_label_mode == "U21 only":
-        _ldf = _arch_pool[_arch_pool["Age"] < 21]
-    elif _arch_label_mode == "U18 only":
-        _ldf = _arch_pool[_arch_pool["Age"] < 18]
-    else:
-        _ldf = _arch_pool
-
-    for _, _r in _ldf.iterrows():
-        _t = _arch_ax.annotate(
-            str(_r["Player"]),
-            (_r[_x_col], _r[_y_col]),
-            xytext=(10, 12), textcoords="offset points",
-            fontsize=_arch_label_size + 2, color=_TXT_C,
-            weight="bold" if _r["_is_team"] else "semibold",
-            ha="left", va="bottom", zorder=7,
+    
+    _cfg = _ARCH_CFG[_arch_pos]
+    _arch_has_box = _cfg["box_col"] is not None
+    
+    # ── Settings expander ────────────────────────────────────────────────────────
+    # These must be outside the expander — df and player_row are only in scope here
+    _arch_leagues_avail = sorted(df["League"].dropna().unique().tolist())
+    _arch_player_league = player_row.iloc[0]["League"] if not player_row.empty else None
+    
+    with st.expander("Scatter settings", expanded=False):
+        _arch_preset = st.selectbox(
+            "League preset",
+            ["Player's league", "Top 5 Europe", "Top 20 Europe", "EFL (England 2–4)", "Custom"],
+            index=0, key="arch_preset",
         )
-        _t.set_path_effects([_pe_arch.withStroke(linewidth=2, foreground="#020617", alpha=0.9)])
-
-# Legend
-_leg_h, _leg_l = [], []
-
-for _an, _ac in _arch_cols.items():
-    _leg_h.append(_L2D([0],[0], marker="s", linestyle="None", color="none",
-                        markerfacecolor=_ac, markersize=14))
-    _leg_l.append(_an)
-
-# Flag rows
-_leg_h.append(_L2D([], [], linestyle="None", color="none"))
-_leg_l.append(_cfg["flag_label"])
-_leg_h.append(_L2D([0],[0], marker="o", linestyle="None", color="none",
-                    markeredgecolor=_TXT_C, markerfacecolor="#f1f5f9",
-                    markeredgewidth=1.4, markersize=14))
-_leg_l.append("No")
-_leg_h.append(_L2D([0],[0], marker="s", linestyle="None", color="none",
-                    markeredgecolor=_TXT_C, markerfacecolor="#f1f5f9",
-                    markeredgewidth=1.4, markersize=14))
-_leg_l.append("Yes")
-
-if _arch_has_box:
+        _arch_preset_map = {
+            "Player's league":   {_arch_player_league} if _arch_player_league else set(),
+            "Top 5 Europe":      set(PRESET_LEAGUES.get("Top 5 Europe", [])),
+            "Top 20 Europe":     set(PRESET_LEAGUES.get("Top 20 Europe", [])),
+            "EFL (England 2–4)": set(PRESET_LEAGUES.get("EFL (England 2–4)", [])),
+            "Custom":            set(),
+        }
+        _arch_add     = st.multiselect("Add leagues", _arch_leagues_avail, default=[], key="arch_add")
+        _arch_leagues = sorted(_arch_preset_map[_arch_preset] | set(_arch_add))
+        if not _arch_leagues and _arch_player_league:
+            _arch_leagues = [_arch_player_league]
+    
+        _arch_min_mins, _arch_max_mins = st.slider("Minutes", 0, 5000, (300, 5000), key="arch_mins")
+        _arch_min_age,  _arch_max_age  = st.slider("Age", 14, 45, (16, 40), key="arch_age")
+        _arch_min_ls,   _arch_max_ls   = st.slider("League Strength", 0, 101, (0, 101), key="arch_ls")
+    
+        _arch_show_labels = st.toggle("Show labels", value=True, key="arch_labels")
+        _arch_label_mode  = st.selectbox(
+            "Label mode",
+            ["Team players only", "All players", "U23 only", "U21 only", "U18 only"],
+            index=0, key="arch_label_mode",
+        )
+        _arch_label_size = st.slider("Label size", 8, 20, 11, 1, key="arch_lblsize")
+        _arch_pt_size    = st.slider("Point size", 24, 300, 180, 2, key="arch_pts")
+        _arch_pt_alpha   = st.slider("Point opacity (others)", 0.05, 1.0, 0.25, 0.05, key="arch_alpha")
+    
+        _arch_canvas = st.selectbox(
+            "Canvas size",
+            ["1280×720", "1600×900", "1920×820", "1920×1080"],
+            index=1, key="arch_canvas",
+        )
+        _arch_w, _arch_h = map(int, _arch_canvas.replace("×", "x").split("x"))
+        _arch_top_gap    = st.slider("Top gap (px)", 0, 240, 80, 5, key="arch_gap")
+        _arch_render_exact = st.checkbox("Render exact pixels (PNG)", value=True, key="arch_exact")
+    
+    # ── Build pool ───────────────────────────────────────────────────────────────
+    _arch_pool = df[df["League"].isin(_arch_leagues)].copy()
+    _arch_pool["_primary_pos"] = _arch_pool["Position"].astype(str).str.split(",").str[0].str.strip()
+    _arch_pool = _arch_pool[_arch_pool["_primary_pos"].isin(_cfg["pos_tokens"])].copy()
+    
+    _arch_pool["Minutes played"]  = pd.to_numeric(_arch_pool["Minutes played"], errors="coerce")
+    _arch_pool["Age"]             = pd.to_numeric(_arch_pool["Age"], errors="coerce")
+    _arch_pool["League Strength"] = _arch_pool["League"].map(LEAGUE_STRENGTHS).fillna(0)
+    
+    _arch_pool = _arch_pool[
+        _arch_pool["Minutes played"].between(_arch_min_mins, _arch_max_mins)
+        & _arch_pool["Age"].between(_arch_min_age, _arch_max_age)
+        & _arch_pool["League Strength"].between(_arch_min_ls, _arch_max_ls)
+    ].copy()
+    
+    if _arch_pool.empty:
+        st.info(f"No players found for {_arch_pos} with current filters.")
+        st.stop()
+    
+    # ── Identify team players ────────────────────────────────────────────────────
+    _arch_team_players = set(
+        _arch_pool.loc[_arch_pool["Team"].astype(str) == str(sel_team), "Player"].astype(str)
+    )
+    
+    # ── Weighted percentile helper ────────────────────────────────────────────────
+    def _arch_wpct(df_sub, row, mgrp):
+        total = 0.0
+        for m, w in mgrp.items():
+            if m not in df_sub.columns:
+                continue
+            vals = pd.to_numeric(df_sub[m], errors="coerce").fillna(0)
+            pct  = _rankdata_arch(vals.values) / len(vals)
+            total += float(pct[df_sub.index.get_loc(row.name)]) * w
+        return total * 100.0
+    
+    # ── Compute scores ───────────────────────────────────────────────────────────
+    for _sn, _grp in _cfg["metric_groups"].items():
+        _arch_pool[_sn] = _arch_pool.apply(
+            lambda r, g=_grp: _arch_wpct(_arch_pool, r, g), axis=1
+        )
+    
+    _arch_pool["Archetype"] = _arch_pool.apply(_cfg["classify"], axis=1)
+    _arch_pool["_flag"]     = _arch_pool[_cfg["flag_col"]] >= _cfg["flag_thr"]
+    
+    if _arch_has_box:
+        _arch_pool["_box_flag"] = _arch_pool[_cfg["box_col"]] >= _cfg["box_thr"]
+    
+    _arch_pool["_is_team"] = _arch_pool["Player"].astype(str).isin(_arch_team_players)
+    
+    # ── Plot ─────────────────────────────────────────────────────────────────────
+    _PAGE_BG = "#0a0f1c"
+    _PLOT_BG  = "#0a0f1c"
+    _GRID_C   = "#3a4050"
+    _TXT_C    = "#f1f5f9"
+    
+    _arch_fig, _arch_ax = plt.subplots(figsize=(_arch_w / 100, _arch_h / 100), dpi=100)
+    _arch_fig.patch.set_facecolor(_PAGE_BG)
+    _arch_ax.set_facecolor(_PLOT_BG)
+    
+    _arch_ax.set_xlim(0, 100)
+    _arch_ax.set_ylim(0, 100)
+    _arch_ax.set_xlabel(_cfg["x_label"], fontsize=16, fontweight="semibold", color=_TXT_C, labelpad=14)
+    _arch_ax.set_ylabel(_cfg["y_label"], fontsize=16, fontweight="semibold", color=_TXT_C)
+    
+    _arch_ax.xaxis.set_major_locator(_MLoc(10))
+    _arch_ax.yaxis.set_major_locator(_MLoc(10))
+    for _tk in _arch_ax.get_xticklabels() + _arch_ax.get_yticklabels():
+        _tk.set_fontweight("semibold"); _tk.set_color(_TXT_C); _tk.set_fontsize(14)
+    
+    _arch_ax.grid(True, color=_GRID_C, linewidth=0.6)
+    for _sp in _arch_ax.spines.values():
+        _sp.set_color("#e5e7eb"); _sp.set_linewidth(1.1)
+    
+    _arch_ax.axvline(50, color="#FFFFFF", linestyle=(0, (4, 4)), lw=1.5)
+    _arch_ax.axhline(50, color="#FFFFFF", linestyle=(0, (4, 4)), lw=1.5)
+    
+    _qbox = dict(boxstyle="round,pad=0.35", facecolor="#d1d5db", edgecolor="none", alpha=0.9)
+    _arch_ax.text(6,  94, _cfg["quadrants"]["tl"], fontsize=16, weight="bold", bbox=_qbox)
+    _arch_ax.text(94, 94, _cfg["quadrants"]["tr"], fontsize=16, weight="bold", ha="right", bbox=_qbox)
+    _arch_ax.text(6,   6, _cfg["quadrants"]["bl"], fontsize=16, weight="bold", bbox=_qbox)
+    _arch_ax.text(96,  6, _cfg["quadrants"]["br"], fontsize=16, weight="bold", ha="right", bbox=_qbox)
+    
+    _x_col      = _cfg["x_col"]
+    _y_col      = _cfg["y_col"]
+    _arch_cols  = _cfg["arch_colors"]
+    _eff_sz     = _arch_pt_size * 1.5
+    
+    # Draw background players first, team players on top
+    for _is_team_pass in [False, True]:
+        _sub   = _arch_pool[_arch_pool["_is_team"] == _is_team_pass]
+        if _sub.empty:
+            continue
+        _alpha = 1.0 if _is_team_pass else _arch_pt_alpha
+        _sz    = _eff_sz * (1.4 if _is_team_pass else 1.0)
+        _ew    = 1.2 if _is_team_pass else 0
+        _ec    = "#ffffff" if _is_team_pass else "none"
+        _zo    = 4 if _is_team_pass else 2
+    
+        if _arch_has_box:
+            for _, _r in _sub.iterrows():
+                _mk = "D" if _r["_box_flag"] else ("s" if _r["_flag"] else "o")
+                _arch_ax.scatter(
+                    _r[_x_col], _r[_y_col],
+                    s=_sz, c=_arch_cols[_r["Archetype"]],
+                    alpha=_alpha, marker=_mk,
+                    edgecolors=_ec, linewidths=_ew, zorder=_zo,
+                )
+        else:
+            for (_al, _fl), _gdf in _sub.groupby(["Archetype", "_flag"]):
+                _arch_ax.scatter(
+                    _gdf[_x_col], _gdf[_y_col],
+                    s=_sz, c=_arch_cols[_al],
+                    alpha=_alpha, marker="s" if _fl else "o",
+                    edgecolors=_ec, linewidths=_ew, zorder=_zo,
+                )
+    
+    # Labels
+    if _arch_show_labels:
+        if _arch_label_mode == "Team players only":
+            _ldf = _arch_pool[_arch_pool["_is_team"]]
+        elif _arch_label_mode == "All players":
+            _ldf = _arch_pool
+        elif _arch_label_mode == "U23 only":
+            _ldf = _arch_pool[_arch_pool["Age"] < 23]
+        elif _arch_label_mode == "U21 only":
+            _ldf = _arch_pool[_arch_pool["Age"] < 21]
+        elif _arch_label_mode == "U18 only":
+            _ldf = _arch_pool[_arch_pool["Age"] < 18]
+        else:
+            _ldf = _arch_pool
+    
+        for _, _r in _ldf.iterrows():
+            _t = _arch_ax.annotate(
+                str(_r["Player"]),
+                (_r[_x_col], _r[_y_col]),
+                xytext=(10, 12), textcoords="offset points",
+                fontsize=_arch_label_size + 2, color=_TXT_C,
+                weight="bold" if _r["_is_team"] else "semibold",
+                ha="left", va="bottom", zorder=7,
+            )
+            _t.set_path_effects([_pe_arch.withStroke(linewidth=2, foreground="#020617", alpha=0.9)])
+    
+    # Legend
+    _leg_h, _leg_l = [], []
+    
+    for _an, _ac in _arch_cols.items():
+        _leg_h.append(_L2D([0],[0], marker="s", linestyle="None", color="none",
+                            markerfacecolor=_ac, markersize=14))
+        _leg_l.append(_an)
+    
+    # Flag rows
     _leg_h.append(_L2D([], [], linestyle="None", color="none"))
-    _leg_l.append(_cfg["box_label"])
-    _leg_h.append(_L2D([0],[0], marker="D", linestyle="None", color="none",
+    _leg_l.append(_cfg["flag_label"])
+    _leg_h.append(_L2D([0],[0], marker="o", linestyle="None", color="none",
+                        markeredgecolor=_TXT_C, markerfacecolor="#f1f5f9",
+                        markeredgewidth=1.4, markersize=14))
+    _leg_l.append("No")
+    _leg_h.append(_L2D([0],[0], marker="s", linestyle="None", color="none",
                         markeredgecolor=_TXT_C, markerfacecolor="#f1f5f9",
                         markeredgewidth=1.4, markersize=14))
     _leg_l.append("Yes")
-
-# Team highlight explanation row
-_leg_h.append(_L2D([], [], linestyle="None", color="none"))
-_leg_l.append("Team highlight")
-_leg_h.append(_L2D([0],[0], marker="o", linestyle="None", color="none",
-                    markeredgecolor="#ffffff", markerfacecolor="#888888",
-                    markeredgewidth=1.4, markersize=14))
-_leg_l.append("White outline")
-
-_legend = _arch_ax.legend(
-    _leg_h, _leg_l,
-    title="Archetype", title_fontsize=15, fontsize=13,
-    bbox_to_anchor=(1.01, 1.00), loc="upper left", frameon=False,
-    handlelength=1.1, handletextpad=0.4,
-    borderpad=0.25, labelspacing=0.55, borderaxespad=0.0,
-)
-_legend.get_title().set_color(_TXT_C)
-_legend.get_title().set_fontweight("semibold")
-
-_hdr_rows = {_cfg["flag_label"], "Team highlight"}
-if _arch_has_box:
-    _hdr_rows.add(_cfg["box_label"])
-for _i, _lt in enumerate(_legend.get_texts()):
-    _lt.set_color(_TXT_C)
-    if _leg_l[_i] in _hdr_rows:
-        _lt.set_fontstyle("italic")
-        _lt.set_fontweight("semibold")
-
-_arch_fig.subplots_adjust(
-    left=0.06, right=0.865, bottom=0.11,
-    top=1.02 - _arch_top_gap / float(_arch_h),
-)
-
-# Render
-if _arch_render_exact:
-    _arch_buf = _BytesIO_arch()
-    _arch_fig.savefig(_arch_buf, format="png", dpi=100, facecolor=_PAGE_BG)
-    _arch_buf.seek(0)
-    st.image(_arch_buf, width=_arch_w)
-    st.download_button(
-        "⬇️ Download Archetype Map (PNG)",
-        data=_arch_buf.getvalue(),
-        file_name=f"archetype_{_arch_pos.replace(' ', '_').replace('/', '')}_{_uuid_arch.uuid4().hex[:6]}.png",
-        mime="image/png",
-        key="arch_dl",
+    
+    if _arch_has_box:
+        _leg_h.append(_L2D([], [], linestyle="None", color="none"))
+        _leg_l.append(_cfg["box_label"])
+        _leg_h.append(_L2D([0],[0], marker="D", linestyle="None", color="none",
+                            markeredgecolor=_TXT_C, markerfacecolor="#f1f5f9",
+                            markeredgewidth=1.4, markersize=14))
+        _leg_l.append("Yes")
+    
+    # Team highlight explanation row
+    _leg_h.append(_L2D([], [], linestyle="None", color="none"))
+    _leg_l.append("Team highlight")
+    _leg_h.append(_L2D([0],[0], marker="o", linestyle="None", color="none",
+                        markeredgecolor="#ffffff", markerfacecolor="#888888",
+                        markeredgewidth=1.4, markersize=14))
+    _leg_l.append("White outline")
+    
+    _legend = _arch_ax.legend(
+        _leg_h, _leg_l,
+        title="Archetype", title_fontsize=15, fontsize=13,
+        bbox_to_anchor=(1.01, 1.00), loc="upper left", frameon=False,
+        handlelength=1.1, handletextpad=0.4,
+        borderpad=0.25, labelspacing=0.55, borderaxespad=0.0,
     )
-else:
-    st.pyplot(_arch_fig)
-
-plt.close(_arch_fig)
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# END TEAM ARCHETYPE MAP
-# ═══════════════════════════════════════════════════════════════════════════════
+    _legend.get_title().set_color(_TXT_C)
+    _legend.get_title().set_fontweight("semibold")
+    
+    _hdr_rows = {_cfg["flag_label"], "Team highlight"}
+    if _arch_has_box:
+        _hdr_rows.add(_cfg["box_label"])
+    for _i, _lt in enumerate(_legend.get_texts()):
+        _lt.set_color(_TXT_C)
+        if _leg_l[_i] in _hdr_rows:
+            _lt.set_fontstyle("italic")
+            _lt.set_fontweight("semibold")
+    
+    _arch_fig.subplots_adjust(
+        left=0.06, right=0.865, bottom=0.11,
+        top=1.02 - _arch_top_gap / float(_arch_h),
+    )
+    
+    # Render
+    if _arch_render_exact:
+        _arch_buf = _BytesIO_arch()
+        _arch_fig.savefig(_arch_buf, format="png", dpi=100, facecolor=_PAGE_BG)
+        _arch_buf.seek(0)
+        st.image(_arch_buf, width=_arch_w)
+        st.download_button(
+            "⬇️ Download Archetype Map (PNG)",
+            data=_arch_buf.getvalue(),
+            file_name=f"archetype_{_arch_pos.replace(' ', '_').replace('/', '')}_{_uuid_arch.uuid4().hex[:6]}.png",
+            mime="image/png",
+            key="arch_dl",
+        )
+    else:
+        st.pyplot(_arch_fig)
+    
+    plt.close(_arch_fig)
+    
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # END TEAM ARCHETYPE MAP
+    # ═══════════════════════════════════════════════════════════════════════════════

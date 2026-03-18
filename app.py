@@ -573,7 +573,7 @@ def render_squad_pitch(team,league,formation,slots,slot_map,depth,df_sc,
                        show_contracts=True,show_positions=True):
     BG="#0a0f1c"; bsz="11px"; nsz="11px"; ssz="8px"; rsz="7px"
 
-    def make_node(slot):
+def make_node(slot):
         ps_all=slot_map.get(slot["id"],[])
         ps=ps_all[:1] if xi_only else ps_all
         badge=(f'<div style="display:inline-block;padding:1px 6px;border:1.5px solid #ef4444;'
@@ -587,8 +587,10 @@ def render_squad_pitch(team,league,formation,slots,slot_map,depth,df_sc,
             _lo=is_loaned_out(p); _yt=is_youth(p)
             col=player_css_color(yrs,loan,_lo,_yt)
             multi=" \U0001f501" if _multi_role(p.get("Position","")) else ""
-            oop_s=f" ({p['_primary_pos']})" if (show_positions and p.get('_show_pos')) else ''
-            suffix=(f" L{oop_s}{multi}" if loan else f"{(yr_str if show_contracts else '')}{oop_s}{multi}")
+            suffix=(f" L{multi}" if loan else f"{(yr_str if show_contracts else '')}{multi}")
+            all_pos_toks=", ".join([t.strip().upper() for t in str(p.get("Position","")).split(",") if t.strip()])
+            pos_line=(f'<div style="color:#6b7280;font-size:{ssz};line-height:1.2;">{all_pos_toks}</div>'
+                      if show_positions and all_pos_toks else "")
             stat_parts=[]
             if show_mins: stat_parts.append(f"{int(float(p.get('Minutes played') or 0))}\u2032")
             if show_goals:
@@ -604,7 +606,7 @@ def render_squad_pitch(team,league,formation,slots,slot_map,depth,df_sc,
             mt="margin-top:4px;" if i>0 else ""
             rows+=(f'<div style="color:{col};font-size:{nsz};line-height:1.35;font-weight:{fw};{mt}'
                    f'white-space:nowrap;text-shadow:0 1px 4px rgba(0,0,0,.9);">'
-                   f'{p["Player"]} {suffix}</div>{stat_html}{rs_html}')
+                   f'{p["Player"]} {suffix}</div>{pos_line}{stat_html}{rs_html}')
         if not ps: rows=f'<div style="color:#1f2937;font-size:{ssz};">&#8212;</div>'
         sx=float(slot.get("x",50))
         mxw="105px" if (sx<18 or sx>82) else "130px"

@@ -980,23 +980,25 @@ footer{display:none!important;}
 with st.sidebar:
     st.markdown("## ⚽ TEAM HQ + SQUAD")
     st.markdown("---")
-    st.markdown("**TEAM STATS CSV**")
-
-    csv_candidates=sorted(Path.cwd().glob("*.csv"),key=lambda c:c.name)
-    if csv_candidates:
-        _csv_names=[c.name for c in csv_candidates]
-        _world=[n for n in _csv_names if n.upper().startswith("WORLD")]
-        _def=_csv_names.index(_world[0]) if _world else 0
-        _team_csv_choice=st.selectbox("Team Stats CSV:",_csv_names,index=_def,key="sb_teamcsv")
-        df_team_raw=_read_team_path(str(Path.cwd()/_team_csv_choice))
-    else:
-        _up_team=st.file_uploader("Upload Team Stats CSV",type=["csv"],key="sb_teamup")
-        if _up_team is None:
-            st.info("Upload team stats CSV to begin.")
+st.markdown("**TEAM STATS CSV**")
+    TEAM_PRELOADED = {
+        "— Select —":                        None,
+        "World England & Scotland (Mar 26)": "WORLDEngland_Scotland_MAR26.csv",
+        "World Team Stats (Mar 26)":         "WORLD_team_stats_MAR26.csv",
+    }
+    _team_preset = st.selectbox("Team Stats CSV:", list(TEAM_PRELOADED.keys()), key="sb_teamcsv")
+    if st.session_state.get("_team_src_key") != _team_preset:
+        st.session_state["_team_raw_df"] = None
+        st.session_state["_team_src_key"] = _team_preset
+    if st.session_state.get("_team_raw_df") is None:
+        _tp = TEAM_PRELOADED.get(_team_preset)
+        if not _tp:
+            st.info("Select a team stats dataset above.")
             st.stop()
-        df_team_raw=_read_team_csv(_up_team.getvalue())
-
-    st.markdown("**PLAYER CSV (for squad)**")
+        if not os.path.exists(_tp):
+            st.warning(f"⚠ {_tp} not found alongside team_squad_app.py"); st.stop()
+        st.session_state["_team_raw_df"] = _read_team_path(_tp)
+    df_team_raw = st.session_state["_team_raw_df"]
 
     PLAYER_COL_MAP = {
         "Player":         ["player","full name","name","player name","player_name"],
@@ -1063,47 +1065,32 @@ with st.sidebar:
         df = pd.read_csv(io.BytesIO(data))
         return normalise_player_df(df)
 
-    _player_csvs=[c.name for c in csv_candidates]
-    if _player_csvs:
-        _def_p=0
-        for i,n in enumerate(_player_csvs):
-            if "player" in n.lower() or "squad" in n.lower() or "efl" in n.lower():
-                _def_p=i; break
-        _player_csv_choice=st.selectbox("Player CSV:",_player_csvs,index=_def_p,key="sb_playercsv")
-
-        if st.session_state.get("_player_src")!=_player_csv_choice:
-            st.session_state["_player_df"]=None
-            st.session_state["_player_df_sc"]=None
-            st.session_state["_player_src"]=_player_csv_choice
-        if st.session_state.get("_player_df") is None:
-            with st.spinner("Loading player data…"):
-                try:
-                    st.session_state["_player_df"]=_load_player_path(str(Path.cwd()/_player_csv_choice))
-                except KeyError as e:
-                    st.error(f"Player CSV column error: {e}")
-                    st.stop()
-            st.session_state["_player_df_sc"]=None
-        if st.session_state.get("_player_df_sc") is None:
-            with st.spinner("Computing role scores…"):
-                st.session_state["_player_df_sc"]=compute_role_scores(st.session_state["_player_df"])
-        df_players=st.session_state["_player_df"]
-        df_players_sc=st.session_state["_player_df_sc"]
-    else:
-        _up_player=st.file_uploader("Upload Player CSV",type=["csv"],key="sb_playerup")
-        if _up_player:
-            try:
-                df_players=_load_player_bytes(_up_player.getvalue())
-            except KeyError as e:
-                st.error(f"Player CSV column error: {e}")
-                st.stop()
-            if st.session_state.get("_player_df_sc") is None:
-                with st.spinner("Computing role scores…"):
-                    df_players_sc=compute_role_scores(df_players)
-                    st.session_state["_player_df_sc"]=df_players_sc
+PLAYER_PRELOADED = {
+        "— Select —":               None,
+        "World UK (Mar 26)":        "WORLDUKMAR26.csv",
+        "World Players (updated)":  "WORLDplayers_updated.csv",
+    }
+    _player_preset = st.selectbox("Player CSV:", list(PLAYER_PRELOADED.keys()), key="sb_playercsv")
+    if st.session_state.get("_player_src") != _player_preset:
+        st.session_state["_player_df"]    = None
+        st.session_state["_player_df_sc"] = None
+        st.session_state["_player_src"]   = _player_preset
+    if st.session_state.get("_player_df") is None:
+        _pp = PLAYER_PRELOADED.get(_player_preset)
+        if _pp:
+            if not os.path.exists(_pp):
+                st.warning(f"⚠ {_pp} not found alongside team_squad_app.py")
             else:
-                df_players_sc=st.session_state["_player_df_sc"]
-        else:
-            df_players=None; df_players_sc=None
+                try:
+                    with st.spinner("Loading player data…"):
+                        st.session_state["_player_df"] = _load_player_path(_pp)
+                except KeyError as e:
+                    st.error(f"Player CSV column error: {e}"); st.stop()
+    if st.session_state.get("_player_df") is not None and st.session_state.get("_player_df_sc") is None:
+        with st.spinner("Computing role scores…"):
+            st.session_state["_player_df_sc"] = compute_role_scores(st.session_state["_player_df"])
+    df_players    = st.session_state.get("_player_df")
+    df_players_sc = st.session_state.get("_player_df_sc")
 
     st.markdown("---")
     st.markdown("**DISPLAY OPTIONS**")

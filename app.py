@@ -16,6 +16,7 @@ from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.patches import Rectangle
 from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 import requests
+from photo_utils import get_player_photo_url, load_player_photo_cached, get_player_photo_pil
 
 st.set_page_config(page_title="TEAM HQ + SQUAD", layout="wide")
 
@@ -869,59 +870,9 @@ def _get_fotmob_url(team: str) -> str:
     return (_FOTMOB_URLS.get(team) or "").strip()
 
 def resolve_player_photo(player, team, league, key_id, session_photo_map, global_overrides):
-    """
-    Resolve a FotMob player photo URL using robust accent-tolerant slug matching
-    with exact surname, full-name contains, and fuzzy fallback (threshold 0.82).
-    """
     if session_photo_map.get(key_id): return session_photo_map[key_id]
-    if global_overrides.get(key_id): return global_overrides[key_id]
-
-    team_url = _get_fotmob_url(team)
-    tid_m = re.search(r"/teams/(\d+)/", team_url or "")
-    if tid_m:
-        squad = _fotmob_squad_cached(tid_m.group(1))
-        target_surname = _slug_name(_slug_surname(player))
-        target_full    = _slug_name(player)
-        best_id = ""
-
-        # 1) Exact surname match — prefer full-name hit within that set
-        if target_surname:
-            for m in squad:
-                name = m.get("name") or m.get("playerName") or ""
-                pid  = str(m.get("id") or m.get("playerId") or m.get("primaryId") or "")
-                if not pid: continue
-                if _slug_name(_slug_surname(name)) == target_surname:
-                    best_id = pid
-                    if target_full and target_full in _slug_name(name):
-                        break  # perfect match, stop early
-
-        # 2) Full slug of player name contained in squad member slug
-        if not best_id and target_full:
-            for m in squad:
-                name = m.get("name") or m.get("playerName") or ""
-                pid  = str(m.get("id") or m.get("playerId") or m.get("primaryId") or "")
-                if pid and target_full in _slug_name(name):
-                    best_id = pid; break
-
-        # 3) Fuzzy surname fallback — lower threshold (0.82) catches lower-league names
-        if not best_id and target_surname:
-            bsc, bpid = 0.0, ""
-            for m in squad:
-                name = m.get("name") or m.get("playerName") or ""
-                pid  = str(m.get("id") or m.get("playerId") or m.get("primaryId") or "")
-                if not pid: continue
-                sc = _SM(None, _slug_name(_slug_surname(name)), target_surname).ratio()
-                if sc > bsc: bsc, bpid = sc, pid
-            if bsc >= 0.82:
-                best_id = bpid
-
-        if best_id and str(best_id).isdigit():
-            url = f"https://images.fotmob.com/image_resources/playerimages/{best_id}.png"
-            session_photo_map[key_id] = url
-            return url
-
-    return "https://i.redd.it/43axcjdu59nd1.jpeg"
-
+    if global_overrides.get(key_id):  return global_overrides[key_id]
+    return get_player_photo_url(player, team)
 
 def load_remote_img(url):
     try:

@@ -173,8 +173,16 @@ def normalise_cols(df:pd.DataFrame)->pd.DataFrame:
     return df.rename(columns=rename)
 
 def pct_rank(series:pd.Series,invert:bool=False)->pd.Series:
-    r=series.rank(pct=True)*100
-    return 100-r if invert else r
+    """True 0-100 percentile: best value scores 100, worst scores 0."""
+    s = pd.to_numeric(series, errors="coerce")
+    n = s.notna().sum()
+    if n <= 1:
+        r = s.rank(method="average", na_option="keep")
+        out = (r - 1) / max(n - 1, 1) * 100
+    else:
+        r = s.rank(method="average", na_option="keep")
+        out = (r - 1) / (n - 1) * 100
+    return 100 - out if invert else out
 
 ROLE_BUCKETS = {
     "GK":{"Shot Stopper GK":{"metrics":{"Prevented goals per 90":3,"Save rate, %":1}},
@@ -1260,7 +1268,11 @@ def pct_y(col):
     s=pd.to_numeric(pool_y[col],errors="coerce").dropna()
     v=float(t_row[col]) if pd.notna(t_row.get(col)) else np.nan
     if pd.isna(v) or s.empty: return 50
-    p=(s<v).mean()*100+(s==v).mean()*50
+    n=len(s)
+    if n==1: return 50
+    # true 0-100: best in league = 100, worst = 0
+    below=(s<v).sum(); equal=(s==v).sum()
+    p=((below+(equal-1)/2)/max(n-1,1))*100
     return float(np.clip((100-p) if inv else p,0,100))
 
 pcts_y=[pct_y(m) for m in metrics_y]
@@ -1321,7 +1333,11 @@ def _op_pct(col,invert=False):
     s=pd.to_numeric(pool_y[col],errors="coerce").dropna()
     v=float(t_row[col]) if pd.notna(t_row.get(col)) else np.nan
     if pd.isna(v) or s.empty: return 0.0
-    p=(s<v).mean()*100+(s==v).mean()*50
+    n=len(s)
+    if n==1: return 50.0
+    # true 0-100: best in league = 100, worst = 0
+    below=(s<v).sum(); equal=(s==v).sum()
+    p=((below+(equal-1)/2)/max(n-1,1))*100
     return float(np.clip((100-p) if invert else p,0,100))
 
 STYLE_TEAM_MAP={
@@ -3850,6 +3866,43 @@ else:
             pcts.append(int(round(ranked[-1] * 100)))
         return pcts, None
 
+    # ── Helper: build a modified cfg with user-swapped metrics ───────────────────
+    def _rr_apply_metric_swaps(cfg, swaps: dict) -> dict:
+        """Return a copy of cfg with agg_cols renamed/replaced per swaps dict {old: new}."""
+        if not swaps:
+            return cfg
+        import copy
+        new_cfg = copy.deepcopy(cfg)
+        new_agg = []
+        for col in new_cfg["agg_cols"]:
+            new_agg.append(swaps.get(col, col))
+        new_cfg["agg_cols"] = new_agg
+        return new_cfg
+
+    def _rr_metric_swap_ui(base_cfg, df_pl, section_key, rk):
+        """Render an expander with per-metric swap selectors. Returns {old_col: new_col} swaps."""
+        # Candidate columns: numeric cols present in the player df
+        num_cols = sorted([c for c in df_pl.columns
+                           if pd.api.types.is_numeric_dtype(df_pl[c]) or
+                           df_pl[c].apply(lambda x: pd.to_numeric(x, errors='coerce')).notna().mean() > 0.3])
+        swaps = {}
+        with st.expander("🔧 Customise metrics", expanded=False):
+            st.markdown('<p style="color:#9ca3af;font-size:12px;margin-bottom:6px;">'
+                        'Replace any default metric with another column from your CSV. '
+                        'Changes apply to both the radar and the percentile calculation.</p>',
+                        unsafe_allow_html=True)
+            for i, col in enumerate(base_cfg["agg_cols"]):
+                opts = [col] + [c for c in num_cols if c != col]
+                sel = st.selectbox(
+                    f"Metric {i+1}: {col}",
+                    opts,
+                    index=0,
+                    key=f"{section_key}_swap_{rk}_{i}",
+                )
+                if sel != col:
+                    swaps[col] = sel
+        return swaps
+
     # ═══════════════════════════════════════════════════════════════════════════════
     # SECTION 1 — Role Requirements (player data only)
     # ═══════════════════════════════════════════════════════════════════════════════
@@ -3882,22 +3935,25 @@ else:
                 _rr1_mode = st.radio("Compare", ["Team average", "Specific player"],
                                       horizontal=True, key=f"rr1_mode_{_rr1_rk}",
                                       label_visibility="collapsed")
+                # Metric customisation
+                _rr1_swaps = _rr_metric_swap_ui(_rr1_role_cfg, df_players, "rr1", _rr1_rk)
+                _rr1_active_cfg = _rr_apply_metric_swaps(_rr1_role_cfg, _rr1_swaps)
 
             if _rr1_mode == "Team average":
                 _rr1_pcts, _rr1_err = _rr_compute_role_pcts_team(
-                    df_players, _arch_team_league, sel_team, _rr1_role_cfg, _rr1_min_mins
+                    df_players, _arch_team_league, sel_team, _rr1_active_cfg, _rr1_min_mins
                 )
-                _rr1_subtitle = f"{sel_team} AVG vs {_arch_team_league} — {_rr1_role_cfg['title']}"
+                _rr1_subtitle = f"{sel_team} AVG vs {_arch_team_league} — {_rr1_active_cfg['title']}"
             else:
                 _rr1_elig = df_players[
                     (df_players["League"].astype(str) == str(_arch_team_league)) &
                     (df_players["Team"].astype(str) == str(sel_team)) &
-                    df_players["Position"].apply(_rr1_role_cfg["pos_filter"])
+                    df_players["Position"].apply(_rr1_active_cfg["pos_filter"])
                 ].copy()
                 _rr1_elig["Minutes played"] = pd.to_numeric(_rr1_elig["Minutes played"], errors="coerce")
                 _rr1_elig = _rr1_elig[_rr1_elig["Minutes played"].fillna(0) >= _rr1_min_mins]
                 if _rr1_elig.empty:
-                    st.info(f"No eligible {_rr1_role_cfg['title']} on {sel_team} with ≥{_rr1_min_mins} mins.")
+                    st.info(f"No eligible {_rr1_active_cfg['title']} on {sel_team} with ≥{_rr1_min_mins} mins.")
                     continue
                 st.markdown('<p style="color:#ffffff;font-weight:700;font-size:13px;margin-top:8px;">PLAYER</p>', unsafe_allow_html=True)
                 _rr1_player_sel = st.selectbox(
@@ -3906,15 +3962,15 @@ else:
                 )
                 _rr1_pcts, _rr1_err = _rr_compute_role_pcts_player(
                     df_players, _arch_team_league, sel_team, _rr1_player_sel,
-                    _rr1_role_cfg, _rr1_min_mins
+                    _rr1_active_cfg, _rr1_min_mins
                 )
-                _rr1_subtitle = f"{_rr1_player_sel} vs {_arch_team_league} — {_rr1_role_cfg['title']}"
+                _rr1_subtitle = f"{_rr1_player_sel} vs {_arch_team_league} — {_rr1_active_cfg['title']}"
 
             if _rr1_err:
                 st.info(_rr1_err)
                 continue
 
-            _rr1_fig = _rr_polar_bars_fig(_rr1_role_cfg["agg_cols"], _rr1_pcts)
+            _rr1_fig = _rr_polar_bars_fig(_rr1_active_cfg["agg_cols"], _rr1_pcts)
             with _rr1_c2:
                 st.markdown(f'<p style="color:#9ca3af;font-size:12px;margin-bottom:0;">{_rr1_subtitle}</p>', unsafe_allow_html=True)
                 st.pyplot(_rr1_fig, use_container_width=True)
@@ -3923,7 +3979,7 @@ else:
                               facecolor=_rr1_fig.get_facecolor())
             _rr1_buf.seek(0)
             st.download_button(
-                f"⬇️ Download {_rr1_role_cfg['title']} radar",
+                f"⬇️ Download {_rr1_active_cfg['title']} radar",
                 data=_rr1_buf.getvalue(),
                 file_name=f"role_req_{_rr1_rk}_{sel_team.replace(' ','_')}_{_uuid_rr.uuid4().hex[:6]}.png",
                 mime="image/png",
@@ -3998,22 +4054,25 @@ else:
                     _rr2_mode = st.radio("Compare", ["Team average", "Specific player"],
                                           horizontal=True, key=f"rr2_mode_{_rr2_rk}",
                                           label_visibility="collapsed")
+                    # Metric customisation
+                    _rr2_swaps = _rr_metric_swap_ui(_rr2_role_cfg, df_players, "rr2", _rr2_rk)
+                    _rr2_active_cfg = _rr_apply_metric_swaps(_rr2_role_cfg, _rr2_swaps)
 
                 if _rr2_mode == "Team average":
                     _rr2_role_pcts, _rr2_err = _rr_compute_role_pcts_team(
-                        df_players, _arch_team_league, sel_team, _rr2_role_cfg, _rr2_min_mins
+                        df_players, _arch_team_league, sel_team, _rr2_active_cfg, _rr2_min_mins
                     )
                     _rr2_subtitle = f"{sel_team} AVG (role) · {_rr2_matched} (team style)"
                 else:
                     _rr2_elig = df_players[
                         (df_players["League"].astype(str) == str(_arch_team_league)) &
                         (df_players["Team"].astype(str) == str(sel_team)) &
-                        df_players["Position"].apply(_rr2_role_cfg["pos_filter"])
+                        df_players["Position"].apply(_rr2_active_cfg["pos_filter"])
                     ].copy()
                     _rr2_elig["Minutes played"] = pd.to_numeric(_rr2_elig["Minutes played"], errors="coerce")
                     _rr2_elig = _rr2_elig[_rr2_elig["Minutes played"].fillna(0) >= _rr2_min_mins]
                     if _rr2_elig.empty:
-                        st.info(f"No eligible {_rr2_role_cfg['title']} on {sel_team} with ≥{_rr2_min_mins} mins.")
+                        st.info(f"No eligible {_rr2_active_cfg['title']} on {sel_team} with ≥{_rr2_min_mins} mins.")
                         continue
                     st.markdown('<p style="color:#ffffff;font-weight:700;font-size:13px;margin-top:8px;">PLAYER</p>', unsafe_allow_html=True)
                     _rr2_player_sel = st.selectbox(
@@ -4022,7 +4081,7 @@ else:
                     )
                     _rr2_role_pcts, _rr2_err = _rr_compute_role_pcts_player(
                         df_players, _arch_team_league, sel_team, _rr2_player_sel,
-                        _rr2_role_cfg, _rr2_min_mins
+                        _rr2_active_cfg, _rr2_min_mins
                     )
                     _rr2_subtitle = f"{_rr2_player_sel} (role) · {_rr2_matched} (team style)"
 
@@ -4037,7 +4096,7 @@ else:
 
                 _rr2_fig = _rr_split_polar_fig(
                     _rr2_team_labels, _rr2_team_pcts,
-                    _rr2_role_cfg["agg_cols"], _rr2_role_pcts,
+                    _rr2_active_cfg["agg_cols"], _rr2_role_pcts,
                 )
                 with _rr2_c2:
                     st.markdown(f'<p style="color:#9ca3af;font-size:12px;margin-bottom:0;">{_rr2_subtitle}</p>',
@@ -4048,7 +4107,7 @@ else:
                                  facecolor=_rr2_fig.get_facecolor())
                 _rr2_buf.seek(0)
                 st.download_button(
-                    f"⬇️ Download {_rr2_role_cfg['title']} split radar",
+                    f"⬇️ Download {_rr2_active_cfg['title']} split radar",
                     data=_rr2_buf.getvalue(),
                     file_name=f"split_radar_{_rr2_rk}_{sel_team.replace(' ','_')}_{_uuid_rr.uuid4().hex[:6]}.png",
                     mime="image/png",

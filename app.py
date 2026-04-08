@@ -3759,6 +3759,25 @@ else:
                         agg_cols=["Opportunities","Ball Carrying","Aerial Requirement",
                                   "Passing Volume","Goal Output","Retention"],
                         title="Strikers")
+
+        if rk == "gk":
+            require = ["Accurate passes, %","Accurate long passes, %",
+                       "Shots against per 90","Exits per 90",
+                       "Passes per 90","Long passes per 90"]
+            def pos_ok_gk(s): return str(s).upper().strip().startswith("GK")
+            def compute_gk(df):
+                out = df.copy()
+                out["Retention"]          = (0.7*pd.to_numeric(out["Accurate passes, %"], errors="coerce") +
+                                              0.3*pd.to_numeric(out["Accurate long passes, %"], errors="coerce"))
+                out["Shots Faced"]        = pd.to_numeric(out["Shots against per 90"], errors="coerce")
+                out["Sweeping"]           = pd.to_numeric(out["Exits per 90"], errors="coerce")
+                out["Short Pass Volume"]  = pd.to_numeric(out["Passes per 90"], errors="coerce")
+                out["Long Pass Volume"]   = pd.to_numeric(out["Long passes per 90"], errors="coerce")
+                return out
+            return dict(pos_filter=pos_ok_gk, require_cols=require, compute_metrics=compute_gk,
+                        agg_cols=["Retention","Shots Faced","Sweeping","Short Pass Volume","Long Pass Volume"],
+                        title="Goalkeepers")
+
         return None
 
     # ── Team style column mapping ──────────────────────────────────────────────────
@@ -3798,6 +3817,13 @@ else:
             "Pressing":    ("PPDA",                        True),   # lower = better
             "Long Balls":  ("Long passes per 90",          False),
             "xG":          ("xG per 90",                   False),
+        },
+        "gk":     {
+            "Possession":  ("Possession, %",              False),
+            "Passes":      ("Passes per 90",               False),
+            "Long Balls":  ("Long passes per 90",          False),
+            "xGA":         ("xGA per 90",                  True),   # lower = better
+            "Goals vs":    ("Goals conceded per 90",       True),   # lower = better
         },
     }
 
@@ -3914,8 +3940,8 @@ else:
         unsafe_allow_html=True,
     )
 
-    _RR_TAB_KEYS   = ["cb", "fb", "cm", "attack", "cf"]
-    _RR_TAB_LABELS = ["Center Backs", "Fullbacks", "Central Midfielders", "Attackers", "Strikers"]
+    _RR_TAB_KEYS   = ["cb", "fb", "cm", "attack", "cf", "gk"]
+    _RR_TAB_LABELS = ["Center Backs", "Fullbacks", "Central Midfielders", "Attackers", "Strikers", "Goalkeepers"]
 
     _rr1_tabs = st.tabs(_RR_TAB_LABELS)
     for _rr1_tab, _rr1_rk in zip(_rr1_tabs, _RR_TAB_KEYS):

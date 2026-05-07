@@ -4053,11 +4053,11 @@ else:
         "Passes to Final Third p90":  "Passes to final third per 90",
     }
     _rr2_rename = {k: v for k, v in _RR2_COL_REMAP.items() if k in df_team_raw.columns}
-    _rr2_keep   = ["Team"] + list(_rr2_rename.keys())
-    _rr2_team_df = df_team_raw[[c for c in _rr2_keep if c in df_team_raw.columns]].rename(columns=_rr2_rename).copy()
+    _rr2_keep   = ["Team", "League"] + list(_rr2_rename.keys())
+    _rr2_team_df_full = df_team_raw[[c for c in _rr2_keep if c in df_team_raw.columns]].rename(columns=_rr2_rename).copy()
 
-    _rr2_csv_teams = _rr2_team_df["Team"].astype(str).tolist() if "Team" in _rr2_team_df.columns else []
-
+    # Match team name against full dataset
+    _rr2_csv_teams = _rr2_team_df_full["Team"].astype(str).tolist() if "Team" in _rr2_team_df_full.columns else []
     if sel_team in _rr2_csv_teams:
         _rr2_matched = sel_team
     else:
@@ -4074,6 +4074,12 @@ else:
             label_visibility="collapsed",
         )
         _rr2_matched = None if _rr2_pick == "(none)" else _rr2_pick
+
+    # Filter pool to team's own league for within-league percentiles
+    if "League" in _rr2_team_df_full.columns and _arch_team_league:
+        _rr2_team_df = _rr2_team_df_full[_rr2_team_df_full["League"].astype(str) == str(_arch_team_league)].copy()
+    else:
+        _rr2_team_df = _rr2_team_df_full.copy()
 
     if not _rr2_matched:
         st.info("Could not match team — select manually above.")

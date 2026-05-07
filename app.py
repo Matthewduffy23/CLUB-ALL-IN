@@ -3356,6 +3356,26 @@ else:
         st.info(f"No {_arch_pos} players found in {_arch_team_league} with >= {_arch_min_mins} mins.")
         st.stop()
 
+    # ── Hide specific player labels ───────────────────────────────────────────────
+    if _arch_show_labels:
+        _arch_team_players_for_hide = sorted(
+            _arch_pool[_arch_pool["Player"].astype(str).isin(
+                set(_rank_team_players["Player"].astype(str).tolist())
+            )]["Player"].astype(str).unique().tolist()
+        )
+        _arch_hide_labels = set(st.multiselect(
+            "Hide player labels",
+            options=_arch_team_players_for_hide,
+            default=[],
+            key="arch_hide_labels",
+            format_func=lambda p: (
+                f"{p}  ({_arch_pool.loc[_arch_pool['Player'].astype(str)==p, 'Position'].iloc[0] if not _arch_pool.loc[_arch_pool['Player'].astype(str)==p].empty else '?'})"
+                f"  ·  {_arch_pool.loc[_arch_pool['Player'].astype(str)==p, 'Team'].iloc[0] if not _arch_pool.loc[_arch_pool['Player'].astype(str)==p].empty else '?'}"
+            ),
+        ))
+    else:
+        _arch_hide_labels = set()
+
     # ── Team player set ───────────────────────────────────────────────────────────
     _arch_team_set = set(
         _rank_team_players["Player"].astype(str).tolist()
@@ -3434,11 +3454,13 @@ else:
                                  marker="s" if _fl else "o",
                                  edgecolors=_ec, linewidths=_ew, zorder=_zo)
 
-    # Labels — team players only
+    # Labels — team players only, excluding hidden
     if _arch_show_labels:
         _ldf = _arch_pool[_arch_pool["_is_team"]]
 
         for _, _r in _ldf.iterrows():
+            if str(_r["Player"]) in _arch_hide_labels:
+                continue
             _t = _arch_ax.annotate(
                 str(_r["Player"]),
                 (_r[_x_col], _r[_y_col]),
@@ -3714,11 +3736,11 @@ else:
                        "Touches in box per 90","xA per 90","Passes to penalty area per 90",
                        "Passes per 90","Progressive passes per 90","Passes to final third per 90",
                        "Dribbles per 90","Progressive runs per 90"]
+            _ATT_TOKS = {"RW", "RWF", "LW", "LWF", "AMF", "RAMF", "LAMF"}
             def pos_ok_att(s: str) -> bool:
-                s = str(s).upper().strip()
-                main = _re_rr.split(r"[/,]", s)[0].strip().split()[0]
-                if main in ("RW","LW"): return True
-                return main.startswith(("RWF","LWF","LAMF","RAMF","AMF"))
+                # First token only — consistent with Quick Search _role_key_from_pos
+                toks = [t for t in _re_rr.split(r"[,/;\s]+", str(s).upper().strip()) if t]
+                return bool(toks) and toks[0] in _ATT_TOKS
             def compute_att(df):
                 out = df.copy()
                 out["Retention Style"]   = pd.to_numeric(out["Accurate passes, %"], errors="coerce")
@@ -3828,19 +3850,22 @@ else:
     }
 
     def _rr_compute_team_pcts(team_df, team_name, col_map):
-        """col_map values are (csv_column_name, invert_bool) tuples."""
+        """col_map values are (csv_column_name, invert_bool) tuples.
+        Percentile = proportion of pool at-or-below the team's value (matches team_hq.py).
+        """
         labels, pcts = [], []
         for lab, (col, invert) in col_map.items():
             labels.append(lab)
             if col not in team_df.columns:
                 pcts.append(50); continue
-            vals = pd.to_numeric(team_df[col], errors="coerce").fillna(0)
+            s    = pd.to_numeric(team_df[col], errors="coerce").dropna()
             rows = team_df[team_df["Team"].astype(str) == str(team_name)]
-            if rows.empty:
+            if rows.empty or s.empty:
                 pcts.append(50); continue
-            v      = float(vals.loc[rows.index[0]])
-            ranked = _rankdata_rr(vals.values) / len(vals)
-            pct    = float(ranked[vals.index.get_loc(rows.index[0])]) * 100
+            v = pd.to_numeric(rows[col], errors="coerce").iloc[0]
+            if pd.isna(v):
+                pcts.append(50); continue
+            pct = float((s <= v).mean() * 100)
             if invert:
                 pct = 100 - pct   # lower raw = higher percentile
             pcts.append(int(round(pct)))

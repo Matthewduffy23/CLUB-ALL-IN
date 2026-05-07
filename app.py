@@ -4053,15 +4053,15 @@ else:
         "Passes to Final Third p90":  "Passes to final third per 90",
     }
     _rr2_rename = {k: v for k, v in _RR2_COL_REMAP.items() if k in df_team_raw.columns}
-    _rr2_keep   = ["Team", "League"] + list(_rr2_rename.keys())
-    _rr2_team_df_full = df_team_raw[[c for c in _rr2_keep if c in df_team_raw.columns]].rename(columns=_rr2_rename).copy()
+    _rr2_keep   = ["Team"] + list(_rr2_rename.keys())
+    _rr2_team_df = df_team_raw[[c for c in _rr2_keep if c in df_team_raw.columns]].rename(columns=_rr2_rename).copy()
 
-    # Match team name against full dataset first, then filter to own league
-    _rr2_all_teams = _rr2_team_df_full["Team"].astype(str).tolist() if "Team" in _rr2_team_df_full.columns else []
-    if sel_team in _rr2_all_teams:
+    _rr2_csv_teams = _rr2_team_df["Team"].astype(str).tolist() if "Team" in _rr2_team_df.columns else []
+
+    if sel_team in _rr2_csv_teams:
         _rr2_matched = sel_team
     else:
-        _rr2_matched = next((t for t in _rr2_all_teams if sel_team.lower()[:5] in t.lower()), None)
+        _rr2_matched = next((t for t in _rr2_csv_teams if sel_team.lower()[:5] in t.lower()), None)
         if _rr2_matched:
             st.markdown(f'<p style="color:#9ca3af;font-size:12px;">ℹ️ Matched <b>{sel_team}</b> → <b>{_rr2_matched}</b></p>',
                         unsafe_allow_html=True)
@@ -4070,16 +4070,10 @@ else:
         st.markdown('<p style="color:#ffffff;font-weight:700;">SELECT MATCHING TEAM</p>', unsafe_allow_html=True)
         _rr2_pick = st.selectbox(
             f"'{sel_team}' not found — select matching team:",
-            ["(none)"] + sorted(_rr2_all_teams), key="rr2_team_match",
+            ["(none)"] + sorted(_rr2_csv_teams), key="rr2_team_match",
             label_visibility="collapsed",
         )
         _rr2_matched = None if _rr2_pick == "(none)" else _rr2_pick
-
-    # Now filter to team's own league for within-league percentiles
-    if "League" in _rr2_team_df_full.columns and _arch_team_league:
-        _rr2_team_df = _rr2_team_df_full[_rr2_team_df_full["League"].astype(str) == str(_arch_team_league)].copy()
-    else:
-        _rr2_team_df = _rr2_team_df_full.copy()
 
     if not _rr2_matched:
         st.info("Could not match team — select manually above.")

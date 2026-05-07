@@ -173,15 +173,11 @@ def normalise_cols(df:pd.DataFrame)->pd.DataFrame:
     return df.rename(columns=rename)
 
 def pct_rank(series:pd.Series,invert:bool=False)->pd.Series:
-    """True 0-100 percentile: best value scores 100, worst scores 0."""
     s = pd.to_numeric(series, errors="coerce")
-    n = s.notna().sum()
-    if n <= 1:
-        r = s.rank(method="average", na_option="keep")
-        out = (r - 1) / max(n - 1, 1) * 100
-    else:
-        r = s.rank(method="average", na_option="keep")
-        out = (r - 1) / (n - 1) * 100
+    def _pct(v, pool):
+        if pd.isna(v): return np.nan
+        return float((pool <= v).mean() * 100)
+    out = s.apply(lambda v: _pct(v, s.dropna()))
     return 100 - out if invert else out
 
 ROLE_BUCKETS = {
@@ -1268,11 +1264,7 @@ def pct_y(col):
     s=pd.to_numeric(pool_y[col],errors="coerce").dropna()
     v=float(t_row[col]) if pd.notna(t_row.get(col)) else np.nan
     if pd.isna(v) or s.empty: return 50
-    n=len(s)
-    if n==1: return 50
-    # true 0-100: best in league = 100, worst = 0
-    below=(s<v).sum(); equal=(s==v).sum()
-    p=((below+(equal-1)/2)/max(n-1,1))*100
+    p=float((s<=v).mean()*100)
     return float(np.clip((100-p) if inv else p,0,100))
 
 pcts_y=[pct_y(m) for m in metrics_y]
@@ -1333,11 +1325,7 @@ def _op_pct(col,invert=False):
     s=pd.to_numeric(pool_y[col],errors="coerce").dropna()
     v=float(t_row[col]) if pd.notna(t_row.get(col)) else np.nan
     if pd.isna(v) or s.empty: return 0.0
-    n=len(s)
-    if n==1: return 50.0
-    # true 0-100: best in league = 100, worst = 0
-    below=(s<v).sum(); equal=(s==v).sum()
-    p=((below+(equal-1)/2)/max(n-1,1))*100
+    p=float((s<=v).mean()*100)
     return float(np.clip((100-p) if invert else p,0,100))
 
 STYLE_TEAM_MAP={
@@ -3384,13 +3372,18 @@ else:
     # ── Weighted percentile ───────────────────────────────────────────────────────
     def _arch_wpct(df_sub, row, mgrp):
         total = 0.0
+        wsum  = 0.0
         for m, w in mgrp.items():
             if m not in df_sub.columns:
                 continue
-            vals = pd.to_numeric(df_sub[m], errors="coerce").fillna(0)
-            pct  = _rankdata_arch(vals.values) / len(vals)
-            total += float(pct[df_sub.index.get_loc(row.name)]) * w
-        return total * 100.0
+            s = pd.to_numeric(df_sub[m], errors="coerce").dropna()
+            v = pd.to_numeric(row.get(m, np.nan), errors="coerce")
+            if pd.isna(v) or s.empty:
+                continue
+            pct = float((s <= v).mean() * 100)
+            total += pct * w
+            wsum  += w
+        return (total / wsum) if wsum > 0 else 0.0
 
     # ── Compute scores ────────────────────────────────────────────────────────────
     for _sn, _grp in _cfg["metric_groups"].items():
@@ -3887,9 +3880,9 @@ else:
             return None, f"'{team}' has no eligible {cfg['title']} in filtered pool."
         pcts = []
         for met in cfg["agg_cols"]:
-            tmp = agg[["Team", met]].sort_values(met, ascending=False).reset_index(drop=True)
-            rk  = int(tmp.index[tmp["Team"] == team][0]) + 1
-            pcts.append(_rr_pct_from_rank(rk, len(tmp)))
+            s = agg[met]
+            v = float(agg.loc[agg["Team"] == team, met].iloc[0])
+            pcts.append(int(round(float((s <= v).mean() * 100))))
         return pcts, None
 
     def _rr_compute_role_pcts_player(player_df, league, team, player_name, cfg, min_mins):
@@ -3910,11 +3903,9 @@ else:
         for met in cfg["agg_cols"]:
             if met not in ldf.columns:
                 pcts.append(50); continue
-            vals   = ldf[met].fillna(0).values
-            v      = float(prow[met].iloc[0])
-            all_v  = np.append(vals, v)
-            ranked = _rankdata_rr(all_v) / len(all_v)
-            pcts.append(int(round(ranked[-1] * 100)))
+            s = pd.to_numeric(ldf[met], errors="coerce").dropna()
+            v = float(prow[met].iloc[0])
+            pcts.append(int(round(float((s <= v).mean() * 100))))
         return pcts, None
 
     # ── Helper: build a modified cfg with user-swapped metrics ───────────────────

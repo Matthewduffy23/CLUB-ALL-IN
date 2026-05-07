@@ -3799,69 +3799,62 @@ else:
     # Columns marked True are inverted (lower raw value = better percentile)
     _RR_TEAM_COLS = {
         "cb":     {
-            "Possession":  ("Possession, %",              False),
-            "Passes":      ("Passes per 90",               False),
-            "Long Balls":  ("Long passes per 90",          False),
-            "xGA":         ("xGA per 90",                  True),   # lower = better
-            "Goals vs":    ("Goals conceded per 90",       True),   # lower = better
+            "Possession":  ("Possession %",        False),
+            "Passes":      ("Passes p90",           False),
+            "Long Balls":  ("Long Passes p90",      False),
+            "xGA":         ("xG Against p90",       True),
+            "Goals vs":    ("Goals Against p90",    True),
         },
         "fb":     {
-            "Possession":  ("Possession, %",              False),
-            "Passes":      ("Passes per 90",               False),
-            "Pressing":    ("PPDA",                        True),   # lower = more pressing = better
-            "Long Balls":  ("Long passes per 90",          False),
-            "xGA":         ("xGA per 90",                  True),   # lower = better
+            "Possession":  ("Possession %",        False),
+            "Passes":      ("Passes p90",           False),
+            "Pressing":    ("PPDA",                 True),
+            "Long Balls":  ("Long Passes p90",      False),
+            "xGA":         ("xG Against p90",       True),
         },
         "cm":     {
-            "Possession":  ("Possession, %",              False),
-            "Passes":      ("Passes per 90",               False),
-            "Pressing":    ("PPDA",                        True),   # lower = better
-            "Long Balls":  ("Long passes per 90",          False),
-            "Passes F3rd": ("Passes to final third per 90",False),
+            "Possession":  ("Possession %",        False),
+            "Passes":      ("Passes p90",           False),
+            "Pressing":    ("PPDA",                 True),
+            "Long Balls":  ("Long Passes p90",      False),
+            "Passes F3rd": ("Passes to Final Third p90", False),
         },
         "attack": {
-            "Possession":  ("Possession, %",              False),
-            "Passes":      ("Passes per 90",               False),
-            "Pressing":    ("PPDA",                        True),   # lower = better
-            "Long Balls":  ("Long passes per 90",          False),
-            "xG":          ("xG per 90",                   False),
+            "Possession":  ("Possession %",        False),
+            "Passes":      ("Passes p90",           False),
+            "Pressing":    ("PPDA",                 True),
+            "Long Balls":  ("Long Passes p90",      False),
+            "xG":          ("xG p90",               False),
         },
         "cf":     {
-            "Possession":  ("Possession, %",              False),
-            "Passes":      ("Passes per 90",               False),
-            "Pressing":    ("PPDA",                        True),   # lower = better
-            "Long Balls":  ("Long passes per 90",          False),
-            "xG":          ("xG per 90",                   False),
+            "Possession":  ("Possession %",        False),
+            "Passes":      ("Passes p90",           False),
+            "Pressing":    ("PPDA",                 True),
+            "Long Balls":  ("Long Passes p90",      False),
+            "xG":          ("xG p90",               False),
         },
         "gk":     {
-            "Possession":  ("Possession, %",              False),
-            "Passes":      ("Passes per 90",               False),
-            "Long Balls":  ("Long passes per 90",          False),
-            "xGA":         ("xGA per 90",                  True),   # lower = better
-            "Goals vs":    ("Goals conceded per 90",       True),   # lower = better
+            "Possession":  ("Possession %",        False),
+            "Passes":      ("Passes p90",           False),
+            "Long Balls":  ("Long Passes p90",      False),
+            "xGA":         ("xG Against p90",       True),
+            "Goals vs":    ("Goals Against p90",    True),
         },
     }
 
-    def _rr_compute_team_pcts(team_df, team_name, col_map):
-        """col_map values are (csv_column_name, invert_bool) tuples.
-        Percentile = proportion of pool at-or-below the team's value (matches team_hq.py).
-        """
+    def _rr_compute_team_pcts(col_map):
+        """Compute team style percentiles using same pool and method as pct_y/_op_pct."""
         labels, pcts = [], []
         for lab, (col, invert) in col_map.items():
             labels.append(lab)
-            if col not in team_df.columns:
+            if col not in pool_y.columns or col not in t_row.index:
                 pcts.append(50); continue
-            s    = pd.to_numeric(team_df[col], errors="coerce").dropna()
-            rows = team_df[team_df["Team"].astype(str) == str(team_name)]
-            if rows.empty or s.empty:
+            s = pd.to_numeric(pool_y[col], errors="coerce").dropna()
+            v = float(t_row[col]) if pd.notna(t_row.get(col)) else np.nan
+            if pd.isna(v) or s.empty:
                 pcts.append(50); continue
-            v = pd.to_numeric(rows[col], errors="coerce").iloc[0]
-            if pd.isna(v):
-                pcts.append(50); continue
-            pct = float((s <= v).mean() * 100)
-            if invert:
-                pct = 100 - pct   # lower raw = higher percentile
-            pcts.append(int(round(pct)))
+            p = float((s <= v).mean() * 100)
+            pcts.append(int(round(100 - p if invert else p)))
         return labels, pcts
 
     def _rr_compute_role_pcts_team(player_df, league, team, cfg, min_mins):
@@ -4041,127 +4034,81 @@ else:
         unsafe_allow_html=True,
     )
 
-    # Remap df_team_raw canonical columns → Wyscout-style names expected by _rr_compute_team_pcts
-    _RR2_COL_REMAP = {
-        "Possession %":               "Possession, %",
-        "Passes p90":                 "Passes per 90",
-        "Long Passes p90":            "Long passes per 90",
-        "xG Against p90":             "xGA per 90",
-        "Goals Against p90":          "Goals conceded per 90",
-        "PPDA":                       "PPDA",
-        "xG p90":                     "xG per 90",
-        "Passes to Final Third p90":  "Passes to final third per 90",
-    }
-    _rr2_rename = {k: v for k, v in _RR2_COL_REMAP.items() if k in df_team_raw.columns}
-    _rr2_keep   = ["Team", "League"] + list(_rr2_rename.keys())
-    _rr2_team_df_full = df_team_raw[[c for c in _rr2_keep if c in df_team_raw.columns]].rename(columns=_rr2_rename).copy()
+    _rr2_tabs = st.tabs(_RR_TAB_LABELS)
+    for _rr2_tab, _rr2_rk in zip(_rr2_tabs, _RR_TAB_KEYS):
+        with _rr2_tab:
+            _rr2_role_cfg = _rr_get_cfg(_rr2_rk)
+            if _rr2_role_cfg is None:
+                st.info("Config not available.")
+                continue
 
-    # Match team name against full dataset
-    _rr2_csv_teams = _rr2_team_df_full["Team"].astype(str).tolist() if "Team" in _rr2_team_df_full.columns else []
-    if sel_team in _rr2_csv_teams:
-        _rr2_matched = sel_team
-    else:
-        _rr2_matched = next((t for t in _rr2_csv_teams if sel_team.lower()[:5] in t.lower()), None)
-        if _rr2_matched:
-            st.markdown(f'<p style="color:#9ca3af;font-size:12px;">ℹ️ Matched <b>{sel_team}</b> → <b>{_rr2_matched}</b></p>',
-                        unsafe_allow_html=True)
+            _rr2_c1, _rr2_c2 = st.columns([1, 2])
+            with _rr2_c1:
+                st.markdown('<p style="color:#ffffff;font-weight:700;font-size:13px;">MIN MINUTES</p>', unsafe_allow_html=True)
+                _rr2_min_mins = st.slider("Min minutes", 0, 5000, 750, 50,
+                                           key=f"rr2_mins_{_rr2_rk}", label_visibility="collapsed")
+                st.markdown(f'<p style="color:#ffffff;font-size:13px;margin-bottom:4px;">Value: <b>{_rr2_min_mins}</b></p>', unsafe_allow_html=True)
+                st.markdown('<p style="color:#ffffff;font-weight:700;font-size:13px;margin-top:8px;">COMPARE</p>', unsafe_allow_html=True)
+                _rr2_mode = st.radio("Compare", ["Team average", "Specific player"],
+                                      horizontal=True, key=f"rr2_mode_{_rr2_rk}",
+                                      label_visibility="collapsed")
+                _rr2_swaps = _rr_metric_swap_ui(_rr2_role_cfg, df_players, "rr2", _rr2_rk)
+                _rr2_active_cfg = _rr_apply_metric_swaps(_rr2_role_cfg, _rr2_swaps)
 
-    if not _rr2_matched:
-        st.markdown('<p style="color:#ffffff;font-weight:700;">SELECT MATCHING TEAM</p>', unsafe_allow_html=True)
-        _rr2_pick = st.selectbox(
-            f"'{sel_team}' not found — select matching team:",
-            ["(none)"] + sorted(_rr2_csv_teams), key="rr2_team_match",
-            label_visibility="collapsed",
-        )
-        _rr2_matched = None if _rr2_pick == "(none)" else _rr2_pick
-
-    # Filter pool to team's own league for within-league percentiles
-    if "League" in _rr2_team_df_full.columns and _arch_team_league:
-        _rr2_team_df = _rr2_team_df_full[_rr2_team_df_full["League"].astype(str) == str(_arch_team_league)].copy()
-    else:
-        _rr2_team_df = _rr2_team_df_full.copy()
-
-    if not _rr2_matched:
-        st.info("Could not match team — select manually above.")
-    else:
-        _rr2_tabs = st.tabs(_RR_TAB_LABELS)
-        for _rr2_tab, _rr2_rk in zip(_rr2_tabs, _RR_TAB_KEYS):
-            with _rr2_tab:
-                _rr2_role_cfg = _rr_get_cfg(_rr2_rk)
-                if _rr2_role_cfg is None:
-                    st.info("Config not available.")
+            if _rr2_mode == "Team average":
+                _rr2_role_pcts, _rr2_err = _rr_compute_role_pcts_team(
+                    df_players, _arch_team_league, sel_team, _rr2_active_cfg, _rr2_min_mins
+                )
+                _rr2_subtitle = f"{sel_team} AVG (role) · {sel_team} (team style)"
+            else:
+                _rr2_elig = df_players[
+                    (df_players["League"].astype(str) == str(_arch_team_league)) &
+                    (df_players["Team"].astype(str) == str(sel_team)) &
+                    df_players["Position"].apply(_rr2_active_cfg["pos_filter"])
+                ].copy()
+                _rr2_elig["Minutes played"] = pd.to_numeric(_rr2_elig["Minutes played"], errors="coerce")
+                _rr2_elig = _rr2_elig[_rr2_elig["Minutes played"].fillna(0) >= _rr2_min_mins]
+                if _rr2_elig.empty:
+                    st.info(f"No eligible {_rr2_active_cfg['title']} on {sel_team} with ≥{_rr2_min_mins} mins.")
                     continue
-
-                _rr2_c1, _rr2_c2 = st.columns([1, 2])
-                with _rr2_c1:
-                    st.markdown('<p style="color:#ffffff;font-weight:700;font-size:13px;">MIN MINUTES</p>', unsafe_allow_html=True)
-                    _rr2_min_mins = st.slider("Min minutes", 0, 5000, 750, 50,
-                                               key=f"rr2_mins_{_rr2_rk}", label_visibility="collapsed")
-                    st.markdown(f'<p style="color:#ffffff;font-size:13px;margin-bottom:4px;">Value: <b>{_rr2_min_mins}</b></p>', unsafe_allow_html=True)
-                    st.markdown('<p style="color:#ffffff;font-weight:700;font-size:13px;margin-top:8px;">COMPARE</p>', unsafe_allow_html=True)
-                    _rr2_mode = st.radio("Compare", ["Team average", "Specific player"],
-                                          horizontal=True, key=f"rr2_mode_{_rr2_rk}",
-                                          label_visibility="collapsed")
-                    # Metric customisation
-                    _rr2_swaps = _rr_metric_swap_ui(_rr2_role_cfg, df_players, "rr2", _rr2_rk)
-                    _rr2_active_cfg = _rr_apply_metric_swaps(_rr2_role_cfg, _rr2_swaps)
-
-                if _rr2_mode == "Team average":
-                    _rr2_role_pcts, _rr2_err = _rr_compute_role_pcts_team(
-                        df_players, _arch_team_league, sel_team, _rr2_active_cfg, _rr2_min_mins
-                    )
-                    _rr2_subtitle = f"{sel_team} AVG (role) · {_rr2_matched} (team style)"
-                else:
-                    _rr2_elig = df_players[
-                        (df_players["League"].astype(str) == str(_arch_team_league)) &
-                        (df_players["Team"].astype(str) == str(sel_team)) &
-                        df_players["Position"].apply(_rr2_active_cfg["pos_filter"])
-                    ].copy()
-                    _rr2_elig["Minutes played"] = pd.to_numeric(_rr2_elig["Minutes played"], errors="coerce")
-                    _rr2_elig = _rr2_elig[_rr2_elig["Minutes played"].fillna(0) >= _rr2_min_mins]
-                    if _rr2_elig.empty:
-                        st.info(f"No eligible {_rr2_active_cfg['title']} on {sel_team} with ≥{_rr2_min_mins} mins.")
-                        continue
-                    st.markdown('<p style="color:#ffffff;font-weight:700;font-size:13px;margin-top:8px;">PLAYER</p>', unsafe_allow_html=True)
-                    _rr2_player_sel = st.selectbox(
-                        "Player", sorted(_rr2_elig["Player"].astype(str).unique()),
-                        key=f"rr2_player_{_rr2_rk}", label_visibility="collapsed"
-                    )
-                    _rr2_role_pcts, _rr2_err = _rr_compute_role_pcts_player(
-                        df_players, _arch_team_league, sel_team, _rr2_player_sel,
-                        _rr2_active_cfg, _rr2_min_mins
-                    )
-                    _rr2_subtitle = f"{_rr2_player_sel} (role) · {_rr2_matched} (team style)"
-
-                if _rr2_err:
-                    st.info(_rr2_err)
-                    continue
-
-                _rr2_col_map = _RR_TEAM_COLS.get(_rr2_rk, {})
-                _rr2_team_labels, _rr2_team_pcts = _rr_compute_team_pcts(
-                    _rr2_team_df, _rr2_matched, _rr2_col_map
+                st.markdown('<p style="color:#ffffff;font-weight:700;font-size:13px;margin-top:8px;">PLAYER</p>', unsafe_allow_html=True)
+                _rr2_player_sel = st.selectbox(
+                    "Player", sorted(_rr2_elig["Player"].astype(str).unique()),
+                    key=f"rr2_player_{_rr2_rk}", label_visibility="collapsed"
                 )
+                _rr2_role_pcts, _rr2_err = _rr_compute_role_pcts_player(
+                    df_players, _arch_team_league, sel_team, _rr2_player_sel,
+                    _rr2_active_cfg, _rr2_min_mins
+                )
+                _rr2_subtitle = f"{_rr2_player_sel} (role) · {sel_team} (team style)"
 
-                _rr2_fig = _rr_split_polar_fig(
-                    _rr2_team_labels, _rr2_team_pcts,
-                    _rr2_active_cfg["agg_cols"], _rr2_role_pcts,
-                )
-                with _rr2_c2:
-                    st.markdown(f'<p style="color:#9ca3af;font-size:12px;margin-bottom:0;">{_rr2_subtitle}</p>',
-                                unsafe_allow_html=True)
-                    st.pyplot(_rr2_fig, use_container_width=True)
-                _rr2_buf = _BytesIO_rr()
-                _rr2_fig.savefig(_rr2_buf, format="png", dpi=300, bbox_inches="tight",
-                                 facecolor=_rr2_fig.get_facecolor())
-                _rr2_buf.seek(0)
-                st.download_button(
-                    f"⬇️ Download {_rr2_active_cfg['title']} split radar",
-                    data=_rr2_buf.getvalue(),
-                    file_name=f"split_radar_{_rr2_rk}_{sel_team.replace(' ','_')}_{_uuid_rr.uuid4().hex[:6]}.png",
-                    mime="image/png",
-                    key=f"rr2_dl_{_rr2_rk}",
-                )
-                plt.close(_rr2_fig)
+            if _rr2_err:
+                st.info(_rr2_err)
+                continue
+
+            _rr2_col_map = _RR_TEAM_COLS.get(_rr2_rk, {})
+            _rr2_team_labels, _rr2_team_pcts = _rr_compute_team_pcts(_rr2_col_map)
+
+            _rr2_fig = _rr_split_polar_fig(
+                _rr2_team_labels, _rr2_team_pcts,
+                _rr2_active_cfg["agg_cols"], _rr2_role_pcts,
+            )
+            with _rr2_c2:
+                st.markdown(f'<p style="color:#9ca3af;font-size:12px;margin-bottom:0;">{_rr2_subtitle}</p>',
+                            unsafe_allow_html=True)
+                st.pyplot(_rr2_fig, use_container_width=True)
+            _rr2_buf = _BytesIO_rr()
+            _rr2_fig.savefig(_rr2_buf, format="png", dpi=300, bbox_inches="tight",
+                             facecolor=_rr2_fig.get_facecolor())
+            _rr2_buf.seek(0)
+            st.download_button(
+                f"⬇️ Download {_rr2_active_cfg['title']} split radar",
+                data=_rr2_buf.getvalue(),
+                file_name=f"split_radar_{_rr2_rk}_{sel_team.replace(' ','_')}_{_uuid_rr.uuid4().hex[:6]}.png",
+                mime="image/png",
+                key=f"rr2_dl_{_rr2_rk}",
+            )
+            plt.close(_rr2_fig)
 
     # ═══════════════════════════════════════════════════════════════════════════════
     # END ROLE REQUIREMENTS

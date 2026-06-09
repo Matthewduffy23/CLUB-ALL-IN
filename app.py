@@ -4158,6 +4158,7 @@ else:
         with _pv3_tab:
             _pv3_c1, _pv3_c2 = st.columns([1, 2])
             _pv3_rk = _pv3_title.lower().replace(" ", "_")
+            _pv3_cache = f"_pv3_png_{_pv3_rk}"
 
             with _pv3_c1:
                 st.markdown('<p style="color:#60a5fa;font-weight:700;font-size:13px;margin-bottom:4px;">TEAM</p>', unsafe_allow_html=True)
@@ -4176,29 +4177,45 @@ else:
                         key=f"pv3_r_{_pv3_rk}_{_pv3_m}",
                     ))
 
+                st.markdown('<div style="height:8px;"></div>', unsafe_allow_html=True)
+                _pv3_generate = st.button(
+                    "Generate radar", key=f"pv3_gen_{_pv3_rk}",
+                    use_container_width=True, type="primary",
+                )
+
             with _pv3_c2:
-                _pv3_fig = _rr_split_polar_fig(
-                    _pv3_cfg["team"], _pv3_t_pcts,
-                    _pv3_cfg["role"], _pv3_r_pcts,
-                )
-                st.markdown(
-                    f'<p style="color:#9ca3af;font-size:12px;margin-bottom:0;">'
-                    f'{_pv3_title} — Projected View</p>',
-                    unsafe_allow_html=True,
-                )
-                st.pyplot(_pv3_fig, use_container_width=True)
-                _pv3_buf = _BytesIO_rr()
-                _pv3_fig.savefig(_pv3_buf, format="png", dpi=300,
-                                 bbox_inches="tight", facecolor=_pv3_fig.get_facecolor())
-                _pv3_buf.seek(0)
-                st.download_button(
-                    f"⬇️ Download {_pv3_title} projected radar",
-                    data=_pv3_buf.getvalue(),
-                    file_name=f"projected_{_pv3_rk}_{_uuid_rr.uuid4().hex[:6]}.png",
-                    mime="image/png",
-                    key=f"pv3_dl_{_pv3_rk}",
-                )
-                plt.close(_pv3_fig)
+                if _pv3_generate:
+                    _pv3_fig = _rr_split_polar_fig(
+                        _pv3_cfg["team"], _pv3_t_pcts,
+                        _pv3_cfg["role"],  _pv3_r_pcts,
+                    )
+                    _pv3_buf = _BytesIO_rr()
+                    _pv3_fig.savefig(_pv3_buf, format="png", dpi=300,
+                                     bbox_inches="tight", facecolor=_pv3_fig.get_facecolor())
+                    plt.close(_pv3_fig)
+                    _pv3_buf.seek(0)
+                    st.session_state[_pv3_cache] = _pv3_buf.getvalue()
+
+                if _pv3_cache in st.session_state:
+                    st.markdown(
+                        f'<p style="color:#9ca3af;font-size:12px;margin-bottom:0;">'
+                        f'{_pv3_title} — Projected View</p>',
+                        unsafe_allow_html=True,
+                    )
+                    st.image(st.session_state[_pv3_cache], use_container_width=True)
+                    st.download_button(
+                        f"⬇️ Download {_pv3_title} projected radar",
+                        data=st.session_state[_pv3_cache],
+                        file_name=f"projected_{_pv3_rk}_{_uuid_rr.uuid4().hex[:6]}.png",
+                        mime="image/png",
+                        key=f"pv3_dl_{_pv3_rk}",
+                    )
+                else:
+                    st.markdown(
+                        '<p style="color:#4b5563;font-size:14px;text-align:center;margin-top:80px;">'
+                        'Set your values and click <b>Generate radar</b></p>',
+                        unsafe_allow_html=True,
+                    )
 
     # ═══════════════════════════════════════════════════════════════════════════════
     # END PROJECTED VIEW

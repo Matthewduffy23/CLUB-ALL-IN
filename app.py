@@ -4113,3 +4113,93 @@ else:
     # ═══════════════════════════════════════════════════════════════════════════════
     # END ROLE REQUIREMENTS
     # ═══════════════════════════════════════════════════════════════════════════════
+
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # SECTION 3 — Projected View (manual percentile entry)
+    # ═══════════════════════════════════════════════════════════════════════════════
+    st.markdown("---")
+    st.markdown('<h2 style="color:#ffffff;">🎯 Projected View</h2>', unsafe_allow_html=True)
+    st.markdown(
+        '<p style="color:#9ca3af;font-size:13px;">'
+        'Enter percentiles (0–100) for each metric. Left = Team style &nbsp;·&nbsp; Right = Role profile.</p>',
+        unsafe_allow_html=True,
+    )
+
+    _PV_TABS = {
+        "Center Backs": {
+            "team": ["Possession", "Passes", "Pressing", "Build Up Speed", "Line Height"],
+            "role": ["Pass Volume", "Progression Volume", "Pass Verticality", "Defensive Volume", "Aerial Volume"],
+        },
+        "Fullbacks": {
+            "team": ["Possession", "Passes", "Pressing", "Build Up Speed", "Attacking Territory"],
+            "role": ["Pass Volume", "Progression Volume", "Defensive Volume", "Attacking Contribution", "Retention"],
+        },
+        "Central Midfield": {
+            "team": ["Possession", "Passes", "Pressing", "Build Up Speed", "Attacking Territory"],
+            "role": ["Pass Volume", "Progression Volume", "Defensive Volume", "Attacking Contribution", "Retention"],
+        },
+        "Attackers": {
+            "team": ["Possession", "Passes", "Pressing", "Build Up Speed", "Attacking Territory", "Long Balls"],
+            "role": ["Pass Volume", "Creativity", "Goal Threat", "Deeper Playmaking", "Ball Carrying", "Retention"],
+        },
+        "Strikers": {
+            "team": ["Possession", "Passes", "Pressing", "Build Up Speed", "Attacking Territory", "xG"],
+            "role": ["Pass Volume", "Aerial Requirement", "Ball Carrying", "Retention", "Opportunities", "Goal Output"],
+        },
+        "Goalkeepers": {
+            "team": ["Possession", "Passes", "Build Up Speed", "Long Balls", "Line Height"],
+            "role": ["Pass Volume", "Sweeping", "Retention", "Shots Faced"],
+        },
+    }
+
+    _pv3_tabs = st.tabs(list(_PV_TABS.keys()))
+
+    for _pv3_tab, (_pv3_title, _pv3_cfg) in zip(_pv3_tabs, _PV_TABS.items()):
+        with _pv3_tab:
+            _pv3_c1, _pv3_c2 = st.columns([1, 2])
+            _pv3_rk = _pv3_title.lower().replace(" ", "_")
+
+            with _pv3_c1:
+                st.markdown('<p style="color:#60a5fa;font-weight:700;font-size:13px;margin-bottom:4px;">TEAM</p>', unsafe_allow_html=True)
+                _pv3_t_pcts = []
+                for _pv3_m in _pv3_cfg["team"]:
+                    _pv3_t_pcts.append(st.number_input(
+                        _pv3_m, min_value=0, max_value=100, value=50, step=1,
+                        key=f"pv3_t_{_pv3_rk}_{_pv3_m}",
+                    ))
+
+                st.markdown('<p style="color:#f472b6;font-weight:700;font-size:13px;margin-top:12px;margin-bottom:4px;">ROLE</p>', unsafe_allow_html=True)
+                _pv3_r_pcts = []
+                for _pv3_m in _pv3_cfg["role"]:
+                    _pv3_r_pcts.append(st.number_input(
+                        _pv3_m, min_value=0, max_value=100, value=50, step=1,
+                        key=f"pv3_r_{_pv3_rk}_{_pv3_m}",
+                    ))
+
+            with _pv3_c2:
+                _pv3_fig = _rr_split_polar_fig(
+                    _pv3_cfg["team"], _pv3_t_pcts,
+                    _pv3_cfg["role"], _pv3_r_pcts,
+                )
+                st.markdown(
+                    f'<p style="color:#9ca3af;font-size:12px;margin-bottom:0;">'
+                    f'{_pv3_title} — Projected View</p>',
+                    unsafe_allow_html=True,
+                )
+                st.pyplot(_pv3_fig, use_container_width=True)
+                _pv3_buf = _BytesIO_rr()
+                _pv3_fig.savefig(_pv3_buf, format="png", dpi=300,
+                                 bbox_inches="tight", facecolor=_pv3_fig.get_facecolor())
+                _pv3_buf.seek(0)
+                st.download_button(
+                    f"⬇️ Download {_pv3_title} projected radar",
+                    data=_pv3_buf.getvalue(),
+                    file_name=f"projected_{_pv3_rk}_{_uuid_rr.uuid4().hex[:6]}.png",
+                    mime="image/png",
+                    key=f"pv3_dl_{_pv3_rk}",
+                )
+                plt.close(_pv3_fig)
+
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # END PROJECTED VIEW
+    # ═══════════════════════════════════════════════════════════════════════════════

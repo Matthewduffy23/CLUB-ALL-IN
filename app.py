@@ -86,17 +86,37 @@ METRIC_LABELS = {
 def mlabel(col): return METRIC_LABELS.get(col, col)
 
 LEAGUE_STRENGTHS = {
-    "England 1":100.00,"Spain 1":87.84,"Germany 1":87.45,"Italy 1":85.88,"France 1":83.14,
-    "England 2":75.10,"Belgium 1":74.51,"Brazil 1":74.31,"Portugal 1":72.94,"Argentina 1":71.37,
-    "USA 1":70.00,"Denmark 1":70.78,"Poland 1":69.61,"Turkey 1":69.02,"Netherlands 1":69.02,
-    "Croatia 1":68.43,"Germany 2":68.04,"Japan 1":67.84,"Switzerland 1":67.45,"Spain 2":67.06,
-    "Norway 1":66.67,"Mexico 1":66.47,"Sweden 1":66.27,"Colombia 1":65.88,"Czech 1":65.29,
-    "Ecuador 1":65.29,"Greece 1":64.12,"Italy 2":63.53,"Hungary 1":63.53,"Austria 1":63.33,
-    "Morocco 1":63.14,"Korea 1":62.75,"France 2":64.00,"England 3":61.96,"Romania 1":61.76,
-    "Scotland 1":61.76,"Uruguay 1":60.39,"Chile 1":59.80,"Israel 1":58.43,"Slovenia 1":57.45,
-    "Slovakia 1":56.47,"Germany 3":54.51,"Ukraine 1":54.31,"Portugal 2":53.14,
-    "Serbia 1":52.16,"England 4":50.78,"Ireland 1":50.59,"Russia 1":62.41,
-    "France 3":49.61,"Scotland 2":38.63,"England 5":33.33,"England 6":16.08,
+    "England 1":100.00,"Spain 1":88,"Germany 1":88,"Italy 1":87,"Portugal 1":80,
+    "France 1":86,"Brazil 1":79,"England 2":76,"Belgium 1":76,"Spain 2":72,
+    "Ukraine 1":65,"Argentina 1":72,"Denmark 1":70.78,"USA 1":70.00,"Poland 1":68,
+    "Turkey 1":71,"Netherlands 1":70,"Croatia 1":68.43,"Germany 2":68.04,"Japan 1":68,
+    "Switzerland 1":67.45,"Norway 1":66.67,"Mexico 1":66.47,"Sweden 1":68,"Colombia 1":67,
+    "Czech 1":67,"Ecuador 1":65.29,"Saudi 1":65.00,"Greece 1":66,"Argentina 2":64.12,
+    "France 2":65,"Italy 2":64,"Hungary 1":65,"Austria 1":66,"Morocco 1":63.14,
+    "Korea 1":62.75,"Paraguay 1":62.55,"Russia 1":66,"England 3":59,"Romania 1":61.76,
+    "Scotland 1":64,"Algeria 1":61.57,"Uruguay 1":60.39,"Cyprus 1":60.00,"Chile 1":59.80,
+    "Egypt 1":59.22,"Israel 1":60,"Brazil 2":59,"Slovenia 1":59,"Bolivia 1":57.25,
+    "Slovakia 1":58,"Azerbaijan 1":55,"South Africa 1":56.27,"UAE 1":55.49,"Costa Rica 1":54.90,
+    "Peru 1":54.90,"Germany 3":56,"Spain 3":56,"Portugal 2":56,"Bulgaria 1":57,
+    "Australia 1":55,"Serbia 1":58,"Poland 2":52.00,"Norway 2":52.00,"Sweden 2":52.00,
+    "Albania 1":54,"Bosnia 1":54,"Kosovo 1":54,"Japan 2":54,"England 4":51,
+    "Ireland 1":51,"Kazakhstan 1":50.39,"Nigeria 1":50.00,"Denmark 2":50.00,"Scotland 2":53,
+    "France 3":54,"Ecuador 2":49.61,"Romania 2":49.61,"Tunisia 1":53,"Venezuela 1":48.63,
+    "Belgium 2":48.43,"Finland 1":48.43,"Colombia 2":48.43,"Czech 2":50,"Northern Ireland 1":48.00,
+    "Armenia 1":47.84,"Montenegro 1":47.84,"Georgia 1":47.65,"Switzerland 2":50,"Zambia 1":46.47,
+    "Uzbekistan 1":46.27,"Cyprus 2":46.27,"Iceland 1":46.08,"Italy 3":52,"North Macedonia 1":44.71,
+    "China 1":44.70,"Turkey 2":50,"Panama 1":44.10,"Korea 2":43.53,"Brazil 3":43.14,
+    "Lithuania 1":42.35,"Netherlands 2":46,"Malta 1":41.96,"Moldova 1":40.39,"Estonia 1":40.00,
+    "USA 2":40.00,"Latvia 1":40.00,"Wales 1":40.00,"Hungary 2":40.00,"Norway 3":40.00,
+    "Montenegro 2":39.80,"Canada 1":38.24,"Austria 2":38.24,"Israel 2":40,"England 7":37.25,
+    "Germany 4":40,"Portugal 3":40,"Faroe Islands 1":35.02,"Saudi 2":35.02,"Qatar 1":45.00,
+    "England 5":33.33,"Andorra 1":33.33,"England 9":31.37,"Serbia 2":35,"Brazil 4":30.00,
+    "Denmark 3":29.41,"Sweden 3":29.41,"Slovenia 2":30,"Slovakia 2":30,"Italy 4":30,
+    "Ukraine 2":30,"Greece 2":30,"Netherlands 3":27.06,"Germany 5":25.00,"Italy 5":25.00,
+    "Portugal 4":25.00,"USA 3":22.55,"Scotland 3":20.00,"Sweden 4":20.00,"Switzerland 3":20.00,
+    "Czech 3":20.00,"Denmark 4":20.00,"Germany 6":20.00,"England 6":16.08,"Kazakhstan 2":16.08,
+    "Kyrgyzstan 1":16.08,"Malta 2":16.08,"England 8":15.69,"Ukraine 3":15.00,"Serbia 3":15.00,
+    "Ireland 2":10.00,"England 10":3.92,"Estonia 2":3.00,
 }
 COUNTRY_TO_REGION = {
     "England":"Europe","Spain":"Europe","Germany":"Europe","Italy":"Europe","France":"Europe",
@@ -939,12 +959,10 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("**TEAM STATS CSV**")
 
-    csv_candidates=sorted(Path.cwd().glob("*.csv"),key=lambda c:c.name)
+    csv_candidates=sorted(Path.cwd().glob("*.csv"),key=lambda c:c.stat().st_mtime,reverse=True)
     if csv_candidates:
         _csv_names=[c.name for c in csv_candidates]
-        _world=[n for n in _csv_names if n.upper().startswith("WORLD")]
-        _def=_csv_names.index(_world[0]) if _world else 0
-        _team_csv_choice=st.selectbox("Team Stats CSV:",_csv_names,index=_def,key="sb_teamcsv")
+        _team_csv_choice=st.selectbox("Team Stats CSV:",_csv_names,index=0,key="sb_teamcsv")
         df_team_raw=_read_team_path(str(Path.cwd()/_team_csv_choice))
     else:
         _up_team=st.file_uploader("Upload Team Stats CSV",type=["csv"],key="sb_teamup")
@@ -1022,11 +1040,7 @@ with st.sidebar:
 
     _player_csvs=[c.name for c in csv_candidates]
     if _player_csvs:
-        _def_p=0
-        for i,n in enumerate(_player_csvs):
-            if "player" in n.lower() or "squad" in n.lower() or "efl" in n.lower():
-                _def_p=i; break
-        _player_csv_choice=st.selectbox("Player CSV:",_player_csvs,index=_def_p,key="sb_playercsv")
+        _player_csv_choice=st.selectbox("Player CSV:",_player_csvs,index=0,key="sb_playercsv")
 
         if st.session_state.get("_player_src")!=_player_csv_choice:
             st.session_state["_player_df"]=None

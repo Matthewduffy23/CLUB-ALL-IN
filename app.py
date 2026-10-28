@@ -1531,8 +1531,19 @@ else:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 PRO_LAYOUT_GROUPS = [
-    ("CF / ST",  ["CF","LWF","RWF"]),
-    ("AM / W",   ["AMF","LAMF","RAMF","LW","RW"]),
+    # FIXED 2026-10-28: LWF/RWF were listed under "CF / ST", so wide forwards
+    # (e.g. wingers on an RWF/LWF Wyscout code) got Striker-named role labels
+    # and, since compute_role_scores() never populates the CF-role _rs_
+    # columns for a non-"CF" player, fell through render_pro_layout_v2()'s
+    # fallback path — which silently reused the FIRST role's metrics for all
+    # three displayed roles, producing identical triplets (e.g. 80/80/80).
+    # ROLE_KEY_MAP/POS_POOL_MAP below already classified LWF/RWF as "ATT"
+    # correctly (that's why squad depth/formation was unaffected) — this
+    # dict just hadn't been kept in sync with them. Now matches Scouting
+    # Hub's own grouping (05_Strikers.py CF_PREFIXES=('CF',) only;
+    # 04_Attacker.py's allowed set includes LW/LWF/RW/RWF/AMF/L-RAMF).
+    ("CF / ST",  ["CF"]),
+    ("AM / W",   ["AMF","LAMF","RAMF","LW","RW","LWF","RWF"]),
     ("CM",       ["LCMF","RCMF","CMF"]),
     ("DM",       ["DMF","LDMF","RDMF"]),
     ("FB",       ["LB","RB","LWB","RWB"]),
